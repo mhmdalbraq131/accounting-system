@@ -1,0 +1,73 @@
+from datetime import date
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.accounting.voucher_service import cancel_voucher, create_voucher, post_voucher
+from app.db.session import get_db
+from app.models.user import User
+from app.models.voucher import Voucher
+
+router = APIRouter(prefix="/vouchers", tags=["السندات"])
+
+
+class VoucherCreate(BaseModel):
+    voucher_number: str
+    voucher_type: str
+    voucher_date: date
+    amount: Decimal
+    description: str
+    source_account_id: int
+    destination_account_id: int
+
+
+class VoucherOut(VoucherCreate):
+    id: int
+    status: str
+    journal_entry_id: int | None
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.post("", response_model=VoucherOut, status_code=201)
+def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    try:
+        voucher = create_voucher(db, **payload.model_dump(), created_by=user.id)
+        db.commit()
+        db.refresh(voucher)
+        return voucher
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{voucher_id}/post", response_model=VoucherOut)
+def post(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    voucher = db.get(Voucher, voucher_id)
+    if not voucher:
+        raise HTTPException(status_code=404, detail="السند غير موجود")
+    try:
+        post_voucher(db, voucher)
+        db.commit()
+        db.refresh(voucher)
+        return voucher
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{voucher_id}/cancel", response_model=VoucherOut)
+def cancel(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    voucher = db.get(Voucher, voucher_id)
+    if not voucher:
+        raise HTTPException(status_code=404, detail="السند غير موجود")
+    try:
+        cancel_voucher(db, voucher)
+        db.commit()
+        db.refresh(voucher)
+        return voucher
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
