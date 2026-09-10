@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
 from app.api.auth import router as auth_router
+from app.api.vouchers import router as vouchers_router
 
 app = FastAPI(
     title="Accounting System API",
-    version="0.2.0",
+    version="0.3.0",
     description="واجهة API للنظام المحاسبي المستقل",
 )
 
@@ -20,6 +21,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
+app.include_router(vouchers_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["system"])
