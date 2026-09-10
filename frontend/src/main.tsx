@@ -1,75 +1,69 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { getPilgrims, getPrograms, getSettings, updateSetting, type Pilgrim, type Program, type Setting } from "./api";
 
 const modules = [
-  ["dashboard", "لوحة التحكم", "▦"],
-  ["travel", "الحج والعمرة", "🕋"],
-  ["pilgrims", "الحجاج والمعتمرون", "👥"],
-  ["visas", "التأشيرات", "🪪"],
-  ["customers", "العملاء", "◉"],
-  ["suppliers", "الموردون", "◇"],
-  ["finance", "الصندوق والبنوك والمحافظ", "▣"],
-  ["vouchers", "السندات", "▤"],
-  ["expenses", "المصروفات", "−"],
-  ["accounts", "الحسابات", "≡"],
-  ["reports", "التقارير", "▥"],
-  ["users", "المستخدمون والصلاحيات", "⚙"],
-  ["settings", "الإعدادات", "⚙"],
+  ["dashboard", "لوحة التحكم", "▦"], ["travel", "الحج والعمرة", "🕋"], ["pilgrims", "الحجاج والمعتمرون", "👥"],
+  ["visas", "التأشيرات", "🪪"], ["customers", "العملاء", "◉"], ["suppliers", "الموردون", "◇"],
+  ["finance", "الصندوق والبنوك والمحافظ", "▣"], ["vouchers", "السندات", "▤"], ["expenses", "المصروفات", "−"],
+  ["accounts", "الحسابات", "≡"], ["reports", "التقارير", "▥"], ["users", "المستخدمون والصلاحيات", "⚙"], ["settings", "الإعدادات", "⚙"],
 ] as const;
-
-const stats = [
-  ["إجمالي المبيعات", "0.00", "ريال يمني"],
-  ["المبالغ المحصلة", "0.00", "ريال يمني"],
-  ["المستحقات", "0.00", "ريال يمني"],
-  ["صافي الربح", "0.00", "ريال يمني"],
-];
 
 function App() {
   const [active, setActive] = useState("dashboard");
+  const [settings, setSettings] = useState<Setting[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [pilgrims, setPilgrims] = useState<Pilgrim[]>([]);
+  const [error, setError] = useState("");
   const title = modules.find(([id]) => id === active)?.[1] ?? "لوحة التحكم";
 
-  return (
-    <div className="shell" dir="rtl">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">م</div>
-          <div><strong>نظام المحاسبة</strong><span>وكالة الحج والعمرة</span></div>
-        </div>
-        <nav>
-          {modules.map(([id, label, icon]) => (
-            <button key={id} className={active === id ? "nav-item active" : "nav-item"} onClick={() => setActive(id)}>
-              <span className="nav-icon">{icon}</span><span>{label}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-foot">نسخة مستقلة • جاهزة للتكامل لاحقًا</div>
-      </aside>
+  useEffect(() => {
+    Promise.allSettled([getSettings(), getPrograms(), getPilgrims()]).then(([s, p, g]) => {
+      if (s.status === "fulfilled") setSettings(s.value);
+      if (p.status === "fulfilled") setPrograms(p.value);
+      if (g.status === "fulfilled") setPilgrims(g.value);
+    });
+  }, []);
 
-      <section className="content">
-        <header className="topbar">
-          <div><h1>{title}</h1><p>نظام إدارة ومحاسبة متكامل لوكالة الحج والعمرة والسفر</p></div>
-          <div className="top-actions"><button className="icon-btn">⌕</button><button className="icon-btn">🔔</button><div className="user-chip"><span>م</span><div><b>مدير النظام</b><small>Administrator</small></div></div></div>
-        </header>
+  async function saveSetting(key: string, value: string) {
+    try { const saved = await updateSetting(key, value); setSettings(old => old.map(s => s.key === key ? saved : s)); setError(""); }
+    catch (e) { setError(e instanceof Error ? e.message : "تعذر حفظ الإعداد"); }
+  }
 
-        {active === "dashboard" ? <Dashboard /> : <ModulePlaceholder title={title} />}
-      </section>
-    </div>
-  );
+  return <div className="shell" dir="rtl">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark">م</div><div><strong>نظام المحاسبة</strong><span>وكالة الحج والعمرة</span></div></div>
+      <nav>{modules.map(([id, label, icon]) => <button key={id} className={active === id ? "nav-item active" : "nav-item"} onClick={() => setActive(id)}><span className="nav-icon">{icon}</span><span>{label}</span></button>)}</nav>
+      <div className="sidebar-foot">نسخة مستقلة • API جاهز للتكامل لاحقًا</div>
+    </aside>
+    <section className="content">
+      <header className="topbar"><div><h1>{title}</h1><p>نظام إدارة ومحاسبة متكامل لوكالة الحج والعمرة والسفر</p></div><div className="top-actions"><button className="icon-btn">⌕</button><button className="icon-btn">🔔</button><div className="user-chip"><span>م</span><div><b>مدير النظام</b><small>Administrator</small></div></div></div></header>
+      {error && <div className="error-banner">{error}</div>}
+      {active === "dashboard" && <Dashboard programs={programs} pilgrims={pilgrims} onNavigate={setActive} />}
+      {active === "settings" && <SettingsPage settings={settings} onSave={saveSetting} />}
+      {active === "travel" && <ProgramsPage programs={programs} />}
+      {active === "pilgrims" && <PilgrimsPage pilgrims={pilgrims} />}
+      {!['dashboard','settings','travel','pilgrims'].includes(active) && <ModulePlaceholder title={title} />}
+    </section>
+  </div>;
 }
 
-function Dashboard() {
+function Dashboard({ programs, pilgrims, onNavigate }: { programs: Program[]; pilgrims: Pilgrim[]; onNavigate: (id:string)=>void }) {
+  const sales = programs.reduce((n,p) => n + Number(p.sale_price || 0), 0);
+  const profit = programs.reduce((n,p) => n + Number(p.sale_price || 0) - Number(p.supplier_cost || 0), 0);
   return <main className="page">
-    <div className="welcome"><div><span className="eyebrow">نظرة عامة</span><h2>مرحبًا بك في نظام المحاسبة</h2><p>كل العمليات المالية والتشغيلية للوكالة في مكان واحد.</p></div><button className="primary">＋ عملية جديدة</button></div>
-    <div className="stats">{stats.map(([label, value, unit]) => <div className="stat" key={label}><span>{label}</span><strong>{value}</strong><small>{unit}</small></div>)}</div>
-    <div className="grid-main">
-      <section className="panel"><div className="panel-head"><div><h3>العمليات الأخيرة</h3><p>آخر الحركات المسجلة في النظام</p></div><button className="link">عرض الكل</button></div><div className="empty"><div>▤</div><b>لا توجد عمليات حتى الآن</b><span>ستظهر هنا السندات والحجوزات والمصروفات عند تسجيلها.</span></div></section>
-      <section className="panel quick"><div className="panel-head"><div><h3>وصول سريع</h3><p>أهم العمليات اليومية</p></div></div><div className="quick-grid"><Quick label="سند قبض" icon="＋"/><Quick label="سند صرف" icon="−"/><Quick label="حجز عمرة" icon="🕋"/><Quick label="تأشيرة" icon="🪪"/></div></section>
-    </div>
-    <section className="panel"><div className="panel-head"><div><h3>حالة برامج الحج والعمرة</h3><p>ملخص الطاقة الاستيعابية والحجوزات</p></div></div><div className="program-empty">لا توجد برامج مضافة حاليًا — أضف أول برنامج للبدء.</div></section>
+    <div className="welcome"><div><span className="eyebrow">نظرة عامة</span><h2>مرحبًا بك في نظام المحاسبة</h2><p>كل العمليات المالية والتشغيلية للوكالة في مكان واحد.</p></div><button className="primary" onClick={() => onNavigate('travel')}>＋ إدارة برامج الحج والعمرة</button></div>
+    <div className="stats"><Stat label="إجمالي قيمة البرامج" value={sales.toFixed(2)} unit="ريال يمني"/><Stat label="عدد البرامج" value={String(programs.length)} unit="برنامج"/><Stat label="الحجاج والمعتمرون" value={String(pilgrims.length)} unit="مسجل"/><Stat label="الربح المتوقع للبرامج" value={profit.toFixed(2)} unit="ريال يمني"/></div>
+    <div className="grid-main"><section className="panel"><div className="panel-head"><div><h3>حالة برامج الحج والعمرة</h3><p>آخر البرامج المسجلة</p></div><button className="link" onClick={() => onNavigate('travel')}>عرض الكل</button></div>{programs.length ? <TablePrograms programs={programs.slice(0,5)} /> : <div className="empty"><div>🕋</div><b>لا توجد برامج حتى الآن</b><span>أضف برنامج عمرة أو حج للبدء.</span></div>}</section>
+    <section className="panel quick"><div className="panel-head"><div><h3>وصول سريع</h3><p>العمليات اليومية</p></div></div><div className="quick-grid"><Quick label="برامج الحج والعمرة" icon="🕋" onClick={() => onNavigate('travel')}/><Quick label="الحجاج والمعتمرون" icon="👥" onClick={() => onNavigate('pilgrims')}/><Quick label="التأشيرات" icon="🪪" onClick={() => onNavigate('visas')}/><Quick label="الإعدادات" icon="⚙" onClick={() => onNavigate('settings')}/></div></section></div>
   </main>;
 }
-function Quick({label, icon}:{label:string;icon:string}) { return <button className="quick-btn"><span>{icon}</span><b>{label}</b><small>إضافة جديد</small></button>; }
-function ModulePlaceholder({title}:{title:string}) { return <main className="page"><section className="panel module"><div className="module-icon">▦</div><h2>{title}</h2><p>هذه الوحدة جاهزة ضمن هيكل النظام. سيتم ربطها بواجهة البيانات والعمليات المحاسبية في المرحلة التالية.</p><button className="primary">＋ إضافة جديد</button></section></main>; }
-
+function Stat({label,value,unit}:{label:string;value:string;unit:string}) { return <div className="stat"><span>{label}</span><strong>{value}</strong><small>{unit}</small></div>; }
+function Quick({label,icon,onClick}:{label:string;icon:string;onClick:()=>void}) { return <button className="quick-btn" onClick={onClick}><span>{icon}</span><b>{label}</b><small>فتح الوحدة</small></button>; }
+function TablePrograms({programs}:{programs:Program[]}) { return <div className="table-wrap"><table><thead><tr><th>الكود</th><th>البرنامج</th><th>النوع</th><th>سعر البيع</th><th>تكلفة المورد</th></tr></thead><tbody>{programs.map(p=><tr key={p.id}><td>{p.code}</td><td>{p.name_ar}</td><td>{p.program_type === 'hajj' ? 'حج' : 'عمرة'}</td><td>{Number(p.sale_price).toFixed(2)}</td><td>{Number(p.supplier_cost).toFixed(2)}</td></tr>)}</tbody></table></div>; }
+function ProgramsPage({programs}:{programs:Program[]}) { return <main className="page"><section className="panel"><div className="panel-head"><div><h2>برامج الحج والعمرة</h2><p>البرامج والأسعار وتكاليف الموردين والطاقة الاستيعابية</p></div><button className="primary">＋ إضافة برنامج</button></div>{programs.length ? <TablePrograms programs={programs}/> : <div className="empty"><div>🕋</div><b>لا توجد برامج مضافة</b><span>ستظهر هنا برامج العمرة والحج بعد ربط شاشة الإضافة بالـ API.</span></div>}</section></main>; }
+function PilgrimsPage({pilgrims}:{pilgrims:Pilgrim[]}) { return <main className="page"><section className="panel"><div className="panel-head"><div><h2>الحجاج والمعتمرون</h2><p>بيانات المسافرين وحالات التأشيرات</p></div><button className="primary">＋ إضافة مسافر</button></div>{pilgrims.length ? <div className="table-wrap"><table><thead><tr><th>الاسم</th><th>الجواز</th><th>الجنسية</th><th>الهاتف</th><th>حالة التأشيرة</th></tr></thead><tbody>{pilgrims.map(p=><tr key={p.id}><td>{p.full_name}</td><td>{p.passport_number}</td><td>{p.nationality || '—'}</td><td>{p.phone || '—'}</td><td>{p.visa_status}</td></tr>)}</tbody></table></div> : <div className="empty"><div>👥</div><b>لا يوجد حجاج أو معتمرون</b><span>أضف أول مسافر لبدء إدارة ملفات العملاء.</span></div>}</section></main>; }
+function SettingsPage({settings,onSave}:{settings:Setting[];onSave:(key:string,value:string)=>void}) { const groups = settings.reduce<Record<string,Setting[]>>((a,s)=>(a[s.category]??=[]).push(s),{} as Record<string,Setting[]>); return <main className="page"><section className="panel"><div className="panel-head"><div><h2>إعدادات النظام</h2><p>إعدادات الوكالة والمالية والحج والعمرة والواجهة</p></div></div>{Object.entries(groups).map(([category,items])=><div className="settings-group" key={category}><h3>{category === 'company' ? 'بيانات الوكالة' : category === 'financial' ? 'الإعدادات المالية' : category === 'travel' ? 'إعدادات الحج والعمرة' : 'إعدادات الواجهة'} </h3><div className="settings-grid">{items.map(s=><label key={s.key}><span>{s.description_ar || s.key}</span><input value={s.value} disabled={!s.is_editable} onChange={e=>onSave(s.key,e.target.value)} /></label>)}</div></div>)}</section></main>; }
+function ModulePlaceholder({title}:{title:string}) { return <main className="page"><section className="panel module"><div className="module-icon">▦</div><h2>{title}</h2><p>هيكل الوحدة موجود، وسيتم ربط العمليات المالية والتقارير والصلاحيات بها تدريجيًا مع الحفاظ على النواة المحاسبية.</p><button className="primary">＋ إضافة جديد</button></section></main>; }
 createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);
