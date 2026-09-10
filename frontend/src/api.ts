@@ -16,9 +16,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 export type Setting = { key: string; value: string; value_type: string; category: string; description_ar: string | null; is_editable: boolean };
 export type Program = { id: number; code: string; name_ar: string; program_type: string; season: string | null; departure_date: string | null; return_date: string | null; capacity: number; sale_price: string; supplier_cost: string; is_active: boolean };
-export type Pilgrim = { id: number; customer_id: number | null; full_name: string; passport_number: string; nationality: string | null; phone: string | null; visa_status: string; };
+export type Pilgrim = { id: number; customer_id: number | null; full_name: string; passport_number: string | null; nationality: string | null; phone: string | null; visa_status: string; };
+export type Dashboard = { programs:number; pilgrims:number; bookings:number; visas:number; customers:number; suppliers:number; revenue:string; service_cost:string; gross_profit:string; expenses:string; net_profit:string; posted_journals:number };
 
 export const getSettings = () => api<Setting[]>("/settings");
 export const updateSetting = (key: string, value: string) => api<Setting>(`/settings/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ value }) });
 export const getPrograms = () => api<Program[]>("/travel/programs");
 export const getPilgrims = () => api<Pilgrim[]>("/travel/pilgrims");
+export const getDashboard = () => api<Dashboard>("/dashboard");
