@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
 from app.api.auth import router as auth_router
+from app.api.dashboard import router as dashboard_router
 from app.api.settings import router as settings_router
 from app.api.travel import router as travel_router
 from app.api.vouchers import router as vouchers_router
 
 app = FastAPI(
     title="Accounting System API",
-    version="0.5.0",
+    version="0.6.0",
     description="واجهة API لنظام محاسبي مستقل لوكالة الحج والعمرة والسفر",
 )
 
@@ -26,6 +27,7 @@ app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(vouchers_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
 
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
