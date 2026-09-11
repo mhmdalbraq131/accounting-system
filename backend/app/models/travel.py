@@ -20,6 +20,7 @@ class TravelProgram(Base):
     sale_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     supplier_cost: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
 
 class Pilgrim(Base):
@@ -32,6 +33,8 @@ class Pilgrim(Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     visa_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
 
 class ProgramBooking(Base):
@@ -48,6 +51,7 @@ class ProgramBooking(Base):
     customer_type: Mapped[str] = mapped_column(String(20), default="direct", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="reserved", nullable=False)
     booked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
 
 class VisaService(Base):
