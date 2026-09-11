@@ -9,6 +9,7 @@ from app.api.parties import router as parties_router
 from app.api.settings import router as settings_router
 from app.api.travel import router as travel_router
 from app.api.vouchers import router as vouchers_router
+from app.api.users import router as users_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -30,6 +31,7 @@ app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(branches_router, prefix="/api/v1")
 app.include_router(parties_router, prefix="/api/v1")
 app.include_router(vouchers_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
