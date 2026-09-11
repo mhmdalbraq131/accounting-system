@@ -12,3 +12,5 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
