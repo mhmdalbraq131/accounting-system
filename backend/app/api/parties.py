@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db.session import get_db
 from app.models.party import Party
+from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.user import User
 
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/parties", tags=["العملاء والموردون"]
 
 
 class PartyCreate(BaseModel):
+    account_id: int | None = None
     name: str = Field(min_length=1, max_length=200)
     party_type: str
     phone: str | None = Field(default=None, max_length=50)
@@ -53,7 +55,13 @@ def create_party(
 ):
     if payload.party_type not in {"customer", "supplier", "both"}:
         raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
-    party = Party(**payload.model_dump())
+    data = payload.model_dump()
+    account_id = data.pop("account_id", None)
+    if account_id is not None:
+        account = db.get(Account, account_id)
+        if not account or not account.is_active:
+            raise HTTPException(400, "الحساب المالي غير موجود أو غير نشط")
+    party = Party(**data)
     db.add(party)
     db.commit()
     db.refresh(party)
