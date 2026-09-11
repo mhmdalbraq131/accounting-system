@@ -63,7 +63,10 @@ def create_party(
         account = db.get(Account, account_id)
         if not account or not account.is_active:
             raise HTTPException(400, "الحساب المالي غير موجود أو غير نشط")
-    party = Party(**data, branch_id=user.branch_id)
+    if account_id is not None and user.branch_id is not None:
+        account = db.get(Account, account_id)
+        if account.branch_id not in (None, user.branch_id): raise HTTPException(403, "الحساب تابع لفرع آخر")
+    party = Party(**data, account_id=account_id, branch_id=user.branch_id)
     db.add(party)
     db.commit()
     db.refresh(party)
@@ -89,6 +92,14 @@ def update_party(
     db.refresh(party)
     return party
 
+
+@router.delete("/{party_id}", response_model=PartyOut)
+def delete_party(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    party = db.get(Party, party_id)
+    if not party: raise HTTPException(404, "الطرف غير موجود")
+    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
+    party.is_active = False
+    db.commit(); db.refresh(party); return party
 
 @router.post("/{party_id}/disable", response_model=PartyOut)
 def disable_party(
