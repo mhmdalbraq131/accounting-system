@@ -15,3 +15,6 @@ __all__ = [
     "Permission", "Role", "RolePermission", "UserRole", "User", "Voucher", "SystemSetting",
     "TravelProgram", "Pilgrim", "ProgramBooking", "VisaService",
 ]
+
+from app.models.currency import Currency
+from app.models.exchange_rate import ExchangeRate
