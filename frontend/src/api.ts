@@ -66,3 +66,6 @@ export const createCurrency = (payload:any) => api<any>("/currencies",{method:"P
 export const createVoucher = (payload:any) => api<any>("/vouchers",{method:"POST",body:JSON.stringify(payload)});
 export const postVoucher = (id:number) => api<any>(`/vouchers/${id}/post`,{method:"POST"});
 export const cancelVoucher = (id:number) => api<any>(`/vouchers/${id}/cancel`,{method:"POST"});
+
+export const getRoles = () => api<any[]>("/users/roles");
+export const deleteParty = (id:number) => api<any>(`/parties/${id}`,{method:"DELETE"});
