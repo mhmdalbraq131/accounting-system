@@ -16,7 +16,13 @@ VALID_TYPES = {"receipt", "payment", "transfer"}
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date,
                    amount: Decimal, description: str, source_account_id: int | None,
                    destination_account_id: int | None, currency_id: int | None = None, exchange_rate: Decimal | None = None, created_by: int | None = None) -> Voucher:
-    voucher_number = voucher_number.strip()\n    description = description.strip()\n    if not voucher_number:\n        raise ValueError("رقم السند مطلوب")\n    if not description:\n        raise ValueError("بيان السند مطلوب")\n    if voucher_type not in VALID_TYPES:
+    voucher_number = voucher_number.strip()
+    description = description.strip()
+    if not voucher_number:
+        raise ValueError("رقم السند مطلوب")
+    if not description:
+        raise ValueError("بيان السند مطلوب")
+    if voucher_type not in VALID_TYPES:
         raise ValueError("نوع السند غير مدعوم")
     amount = Decimal(str(amount))
     if amount <= 0:
@@ -25,7 +31,9 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         raise ValueError("يجب تحديد حساب المصدر وحساب الوجهة")
     if source_account_id == destination_account_id:
         raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
-    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first():\n        raise ValueError("رقم السند مستخدم مسبقًا")\n    for account_id in (source_account_id, destination_account_id):
+    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first():
+        raise ValueError("رقم السند مستخدم مسبقًا")
+    for account_id in (source_account_id, destination_account_id):
         account = db.get(Account, account_id)
         if not account or not account.is_active:
             raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
