@@ -16,7 +16,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("")
 def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    branch_filter = lambda stmt, col: stmt.where((col == user.branch_id) | (user.branch_id.is_(None)))
+    branch_filter = lambda stmt, col: stmt if user.branch_id is None else stmt.where((col == user.branch_id) | col.is_(None))
     programs = db.scalar(branch_filter(select(func.count(TravelProgram.id)).where(TravelProgram.is_active.is_(True)), TravelProgram.branch_id)) or 0
     pilgrims = db.scalar(branch_filter(select(func.count(Pilgrim.id)), Pilgrim.branch_id)) or 0
     bookings = db.scalar(branch_filter(select(func.count(ProgramBooking.id)), ProgramBooking.branch_id)) or 0
