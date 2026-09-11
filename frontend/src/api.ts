@@ -50,3 +50,19 @@ export const createUser = (payload: {username:string;full_name:string;password:s
 
 export const createParty = (payload: {name:string;party_type:string;phone?:string;address?:string;code?:string;email?:string;notes?:string;account_id?:number}) =>
   api<any>("/parties", {method:"POST", body:JSON.stringify(payload)});
+
+
+export const getParties = (type?:string) => api<any[]>(`/parties${type?("?party_type="+encodeURIComponent(type)):""}`);
+export const getAccounts = () => api<any[]>("/accounts");
+export const getFinancial = () => api<any[]>("/financial-accounts");
+export const getCurrencies = () => api<any[]>("/currencies");
+export const getVouchers = () => api<any[]>("/vouchers");
+export const getFinancialSummary = () => api<any>("/reports/financial-summary");
+export const getVisaServices = () => api<any[]>("/travel/visas");
+export const createVisa = (payload:any) => api<any>("/travel/visas",{method:"POST",body:JSON.stringify(payload)});
+export const createAccount = (payload:any) => api<any>("/accounts",{method:"POST",body:JSON.stringify(payload)});
+export const createFinancial = (payload:any) => api<any>("/financial-accounts",{method:"POST",body:JSON.stringify(payload)});
+export const createCurrency = (payload:any) => api<any>("/currencies",{method:"POST",body:JSON.stringify(payload)});
+export const createVoucher = (payload:any) => api<any>("/vouchers",{method:"POST",body:JSON.stringify(payload)});
+export const postVoucher = (id:number) => api<any>(`/vouchers/${id}/post`,{method:"POST"});
+export const cancelVoucher = (id:number) => api<any>(`/vouchers/${id}/cancel`,{method:"POST"});
