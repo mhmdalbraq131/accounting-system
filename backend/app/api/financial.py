@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.financial import FinancialAccount
 from app.models.currency import Currency
 from app.models.user import User
+from app.models.account import Account
 
 router=APIRouter(prefix="/financial-accounts",tags=["الصناديق والبنوك والمحافظ"])
 class FinancialIn(BaseModel):
@@ -26,6 +27,9 @@ def list_financial(db:Session=Depends(get_db),user:User=Depends(get_current_user
 @router.post("",status_code=201)
 def create_financial(payload:FinancialIn,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     if payload.account_type not in {"cashbox","bank","wallet"}: raise HTTPException(400,"نوع الحساب المالي غير صحيح")
+    ledger = db.get(Account, payload.ledger_account_id)
+    if not ledger or not ledger.is_active: raise HTTPException(400,"الحساب المحاسبي غير موجود أو غير نشط")
+    if user.branch_id is not None and ledger.branch_id not in (None,user.branch_id): raise HTTPException(403,"الحساب المحاسبي تابع لفرع آخر")
     if payload.currency_id is not None:
         c=db.get(Currency,payload.currency_id)
         if not c or not c.is_active: raise HTTPException(400,"العملة غير موجودة أو غير نشطة")
