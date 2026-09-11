@@ -16,3 +16,5 @@ class Party(Base):
     code: Mapped[str | None] = mapped_column(String(40), unique=True, index=True, nullable=True)
     email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
