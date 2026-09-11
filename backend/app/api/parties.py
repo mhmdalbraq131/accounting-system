@@ -16,6 +16,9 @@ class PartyCreate(BaseModel):
     party_type: str
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = Field(default=None, max_length=300)
+    code: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class PartyOut(PartyCreate):
