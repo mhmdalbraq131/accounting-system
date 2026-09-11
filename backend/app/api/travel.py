@@ -45,35 +45,41 @@ class VisaCreate(BaseModel):
     supplier_cost: Decimal = Field(default=Decimal("0"), ge=0)
 
 @router.get("/programs")
-def programs(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return db.scalars(select(TravelProgram).order_by(TravelProgram.id.desc())).all()
+def programs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    stmt=select(TravelProgram).order_by(TravelProgram.id.desc())
+    if user.branch_id is not None: stmt=stmt.where((TravelProgram.branch_id==user.branch_id)|TravelProgram.branch_id.is_(None))
+    return db.scalars(stmt).all()
 
 @router.post("/programs", status_code=201)
-def create_program(payload: ProgramCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if payload.program_type not in {"umrah", "hajj"}:
         raise HTTPException(400, "نوع البرنامج يجب أن يكون عمرة أو حج")
     if db.scalar(select(TravelProgram).where(TravelProgram.code == payload.code)):
         raise HTTPException(409, "رمز البرنامج مستخدم مسبقًا")
-    program = TravelProgram(**payload.model_dump())
+    program = TravelProgram(**payload.model_dump(), branch_id=user.branch_id)
     db.add(program); db.commit(); db.refresh(program)
     return program
 
 @router.get("/pilgrims")
-def pilgrims(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return db.scalars(select(Pilgrim).order_by(Pilgrim.id.desc())).all()
+def pilgrims(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    stmt=select(Pilgrim).order_by(Pilgrim.id.desc())
+    if user.branch_id is not None: stmt=stmt.where((Pilgrim.branch_id==user.branch_id)|Pilgrim.branch_id.is_(None))
+    return db.scalars(stmt).all()
 
 @router.post("/pilgrims", status_code=201)
-def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    pilgrim = Pilgrim(**payload.model_dump())
+def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    pilgrim = Pilgrim(**payload.model_dump(), branch_id=user.branch_id)
     db.add(pilgrim); db.commit(); db.refresh(pilgrim)
     return pilgrim
 
 @router.get("/bookings")
-def bookings(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return db.scalars(select(ProgramBooking).order_by(ProgramBooking.id.desc())).all()
+def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    stmt=select(ProgramBooking).order_by(ProgramBooking.id.desc())
+    if user.branch_id is not None: stmt=stmt.where((ProgramBooking.branch_id==user.branch_id)|ProgramBooking.branch_id.is_(None))
+    return db.scalars(stmt).all()
 
 @router.post("/bookings", status_code=201)
-def create_booking(payload: BookingCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     program = db.get(TravelProgram, payload.program_id)
     if not program or not program.is_active:
         raise HTTPException(404, "البرنامج غير موجود أو غير نشط")
@@ -95,13 +101,15 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), _: Use
     return booking
 
 @router.get("/visas")
-def visas(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return db.scalars(select(VisaService).order_by(VisaService.id.desc())).all()
+def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    stmt=select(VisaService).order_by(VisaService.id.desc())
+    if user.branch_id is not None: stmt=stmt.where((VisaService.branch_id==user.branch_id)|VisaService.branch_id.is_(None))
+    return db.scalars(stmt).all()
 
 @router.post("/visas", status_code=201)
-def create_visa(payload: VisaCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not db.get(Pilgrim, payload.pilgrim_id):
         raise HTTPException(404, "المعتمر أو الحاج غير موجود")
-    visa = VisaService(**payload.model_dump(), profit=payload.sale_price - payload.supplier_cost)
+    visa = VisaService(**payload.model_dump(), profit=payload.sale_price - payload.supplier_cost, branch_id=user.branch_id)
     db.add(visa); db.commit(); db.refresh(visa)
     return visa
