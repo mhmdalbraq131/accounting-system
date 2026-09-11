@@ -15,18 +15,19 @@ from app.models.user import User
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("")
-def dashboard(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    programs = db.scalar(select(func.count(TravelProgram.id)).where(TravelProgram.is_active.is_(True))) or 0
-    pilgrims = db.scalar(select(func.count(Pilgrim.id))) or 0
-    bookings = db.scalar(select(func.count(ProgramBooking.id))) or 0
-    visas = db.scalar(select(func.count(VisaService.id))) or 0
-    customers = db.scalar(select(func.count(Party.id)).where(Party.party_type == "customer", Party.is_active.is_(True))) or 0
-    suppliers = db.scalar(select(func.count(Party.id)).where(Party.party_type == "supplier", Party.is_active.is_(True))) or 0
-    expenses = db.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(Expense.status != "cancelled")) or Decimal("0")
-    revenue = db.scalar(select(func.coalesce(func.sum(ProgramBooking.sale_price), 0))) or Decimal("0")
-    service_cost = db.scalar(select(func.coalesce(func.sum(ProgramBooking.supplier_cost), 0))) or Decimal("0")
-    visa_revenue = db.scalar(select(func.coalesce(func.sum(VisaService.sale_price), 0))) or Decimal("0")
-    visa_cost = db.scalar(select(func.coalesce(func.sum(VisaService.supplier_cost), 0))) or Decimal("0")
+def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    branch_filter = lambda stmt, col: stmt.where((col == user.branch_id) | (user.branch_id.is_(None)))
+    programs = db.scalar(branch_filter(select(func.count(TravelProgram.id)).where(TravelProgram.is_active.is_(True)), TravelProgram.branch_id)) or 0
+    pilgrims = db.scalar(branch_filter(select(func.count(Pilgrim.id)), Pilgrim.branch_id)) or 0
+    bookings = db.scalar(branch_filter(select(func.count(ProgramBooking.id)), ProgramBooking.branch_id)) or 0
+    visas = db.scalar(branch_filter(select(func.count(VisaService.id)), VisaService.branch_id)) or 0
+    customers = db.scalar(branch_filter(select(func.count(Party.id)).where(Party.party_type == "customer", Party.is_active.is_(True)), Party.branch_id)) or 0
+    suppliers = db.scalar(branch_filter(select(func.count(Party.id)).where(Party.party_type == "supplier", Party.is_active.is_(True)), Party.branch_id)) or 0
+    expenses = db.scalar(branch_filter(select(func.coalesce(func.sum(Expense.amount), 0)).where(Expense.status != "cancelled"), Expense.branch_id)) or Decimal("0")
+    revenue = db.scalar(branch_filter(select(func.coalesce(func.sum(ProgramBooking.sale_price), 0)), ProgramBooking.branch_id)) or Decimal("0")
+    service_cost = db.scalar(branch_filter(select(func.coalesce(func.sum(ProgramBooking.supplier_cost), 0)), ProgramBooking.branch_id)) or Decimal("0")
+    visa_revenue = db.scalar(branch_filter(select(func.coalesce(func.sum(VisaService.sale_price), 0)), VisaService.branch_id)) or Decimal("0")
+    visa_cost = db.scalar(branch_filter(select(func.coalesce(func.sum(VisaService.supplier_cost), 0)), VisaService.branch_id)) or Decimal("0")
     posted_journals = db.scalar(select(func.count(JournalEntry.id)).where(JournalEntry.status == "posted")) or 0
     return {
         "programs": programs,
