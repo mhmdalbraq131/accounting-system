@@ -34,3 +34,19 @@ export const getVoucherPrintData = (id:number) => api<{voucher:unknown;printed_b
 
 export const getCurrencies = () => api<any[]>("/currencies");
 export const getFinancialAccounts = () => api<any[]>("/financial-accounts");
+
+
+export const createProgram = (payload: {code:string;name_ar:string;program_type:string;season?:string;capacity:number;sale_price:number;supplier_cost:number}) =>
+  api<Program>("/travel/programs", {method:"POST", body:JSON.stringify(payload)});
+
+export const createPilgrim = (payload: {full_name:string;passport_number?:string;nationality?:string;phone?:string;customer_id?:number}) =>
+  api<Pilgrim>("/travel/pilgrims", {method:"POST", body:JSON.stringify(payload)});
+
+export const createBranch = (payload: {code:string;name_ar:string;address?:string;phone?:string;is_main:boolean}) =>
+  api<Branch>("/branches", {method:"POST", body:JSON.stringify(payload)});
+
+export const createUser = (payload: {username:string;full_name:string;password:string;branch_id?:number;role_id?:number}) =>
+  api<User>("/users", {method:"POST", body:JSON.stringify(payload)});
+
+export const createParty = (payload: {name:string;party_type:string;phone?:string;address?:string;code?:string;email?:string;notes?:string;account_id?:number}) =>
+  api<any>("/parties", {method:"POST", body:JSON.stringify(payload)});
