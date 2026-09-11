@@ -14,3 +14,5 @@ class FinancialAccount(Base):
     ledger_account_id: Mapped[int] = mapped_column(Integer, index=True)
     opening_balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
