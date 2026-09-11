@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db.session import get_db
 from app.models.party import Party
+from app.models.journal import JournalEntry, JournalLine
 from app.models.user import User
 
 router = APIRouter(prefix="/parties", tags=["العملاء والموردون"])
@@ -91,3 +92,14 @@ def disable_party(
     db.commit()
     db.refresh(party)
     return party
+
+
+@router.get("/{party_id}/statement")
+def party_statement(party_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    party = db.get(Party, party_id)
+    if not party:
+        raise HTTPException(404, "الطرف غير موجود")
+    # كشف الحساب الحالي يعتمد على القيود المحاسبية الموصوفة برقم/اسم الطرف.
+    debit = db.scalar(select(func.coalesce(func.sum(JournalLine.debit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalEntry.description.contains(party.name))) or 0
+    credit = db.scalar(select(func.coalesce(func.sum(JournalLine.credit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalEntry.description.contains(party.name))) or 0
+    return {"party_id": party.id, "party_name": party.name, "party_type": party.party_type, "total_debit": debit, "total_credit": credit, "balance": debit - credit}
