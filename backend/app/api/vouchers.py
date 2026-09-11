@@ -22,6 +22,8 @@ class VoucherCreate(BaseModel):
     description: str
     source_account_id: int
     destination_account_id: int
+    currency_id: int | None = None
+    exchange_rate: Decimal | None = None
 
 
 class VoucherOut(VoucherCreate):
