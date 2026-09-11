@@ -10,6 +10,7 @@ from app.accounting.voucher_service import cancel_voucher, create_voucher, post_
 from app.db.session import get_db
 from app.models.user import User
 from app.models.voucher import Voucher
+from app.models.financial import FinancialAccount
 
 router = APIRouter(prefix="/vouchers", tags=["السندات"])
 
@@ -53,6 +54,10 @@ def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(ge
         raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
         raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
+    if user.branch_id is not None:
+        for account_id in (voucher.source_account_id, voucher.destination_account_id):
+            fa = db.scalar(__import__("sqlalchemy").select(FinancialAccount).where(FinancialAccount.ledger_account_id == account_id, FinancialAccount.branch_id == user.branch_id))
+            if fa is not None and fa.branch_id != user.branch_id: raise HTTPException(status_code=403, detail="الحساب المالي تابع لفرع آخر")
     try:
         post_voucher(db, voucher)
         db.commit()
