@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -6,6 +7,21 @@ from app.auth import hash_password
 from app.db.session import SessionLocal
 from app.models.role import Permission, Role, RolePermission, UserRole
 from app.models.user import User
+
+
+def _load_env_file() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = [part.strip() for part in line.split("=", 1)]
+        os.environ.setdefault(key, value)
+
+
+_load_env_file()
 
 DEFAULT_PERMISSIONS = [
     ("accounts.view", "عرض الحسابات"),
