@@ -30,3 +30,4 @@ export type User = { id:number; username:string; full_name:string; branch_id:num
 export const getBranches = () => api<Branch[]>("/branches");
 export const getUsers = () => api<User[]>("/users");
 export const getMe = () => api<{id:number;username:string;full_name:string;branch_id:number|null;is_active:boolean}>("/auth/me");
+export const getVoucherPrintData = (id:number) => api<{voucher:unknown;printed_by:string;printed_by_username:string;branch_id:number|null}>(`/vouchers/${id}/print-data`);
