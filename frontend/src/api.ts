@@ -71,3 +71,6 @@ export const getRoles = () => api<any[]>("/users/roles");
 export const deleteParty = (id:number) => api<any>(`/parties/${id}`,{method:"DELETE"});
 
 export const login = (username:string,password:string) => api<{access_token:string;token_type:string}>("/auth/login",{method:"POST",body:JSON.stringify({username,password})});
+
+export const getExpenses = () => api<any[]>("/expenses");
+export const createExpense = (payload:any) => api<any>("/expenses",{method:"POST",body:JSON.stringify(payload)});
