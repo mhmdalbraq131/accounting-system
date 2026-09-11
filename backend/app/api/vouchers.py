@@ -45,10 +45,12 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
 
 
 @router.post("/{voucher_id}/post", response_model=VoucherOut)
-def post(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
     if not voucher:
         raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
+        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
         post_voucher(db, voucher)
         db.commit()
@@ -60,10 +62,12 @@ def post(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get_c
 
 
 @router.post("/{voucher_id}/cancel", response_model=VoucherOut)
-def cancel(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def cancel(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
     if not voucher:
         raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
+        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
         cancel_voucher(db, voucher)
         db.commit()
