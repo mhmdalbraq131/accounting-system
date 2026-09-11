@@ -83,6 +83,11 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
     program = db.get(TravelProgram, payload.program_id)
     if not program or not program.is_active:
         raise HTTPException(404, "البرنامج غير موجود أو غير نشط")
+    pilgrim = db.get(Pilgrim, payload.pilgrim_id)
+    if not pilgrim or (user.branch_id is not None and pilgrim.branch_id not in (None,user.branch_id)):
+        raise HTTPException(404, "المعتمر أو الحاج غير موجود")
+    if payload.customer_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.customer_id):
+        raise HTTPException(400, "العميل غير موجود")
     if not db.get(Pilgrim, payload.pilgrim_id):
         raise HTTPException(404, "المعتمر أو الحاج غير موجود")
     if payload.customer_type not in {"direct", "agency"}:
@@ -110,6 +115,8 @@ def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user))
 def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not db.get(Pilgrim, payload.pilgrim_id):
         raise HTTPException(404, "المعتمر أو الحاج غير موجود")
+    if payload.customer_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.customer_id): raise HTTPException(400, "العميل غير موجود")
+    if payload.supplier_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.supplier_id): raise HTTPException(400, "المورد غير موجود")
     visa = VisaService(**payload.model_dump(), profit=payload.sale_price - payload.supplier_cost, branch_id=user.branch_id)
     db.add(visa); db.commit(); db.refresh(visa)
     return visa
