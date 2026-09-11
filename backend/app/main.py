@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.accounts import router as accounts_router
 from app.api.branches import router as branches_router
 from app.api.currencies import router as currencies_router
+from app.api.financial import router as financial_router
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.reports import router as reports_router
@@ -32,6 +33,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(branches_router, prefix="/api/v1")
 app.include_router(currencies_router, prefix="/api/v1")
+app.include_router(financial_router, prefix="/api/v1")
 app.include_router(parties_router, prefix="/api/v1")
 app.include_router(vouchers_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
