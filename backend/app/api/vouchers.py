@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session
+from sqlalchemy import select\nfrom sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.accounting.voucher_service import cancel_voucher, create_voucher, post_voucher
@@ -56,7 +56,7 @@ def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(ge
         raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     if user.branch_id is not None:
         for account_id in (voucher.source_account_id, voucher.destination_account_id):
-            fa = db.scalar(__import__("sqlalchemy").select(FinancialAccount).where(FinancialAccount.ledger_account_id == account_id, FinancialAccount.branch_id == user.branch_id))
+            fa = db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == account_id, FinancialAccount.branch_id == user.branch_id))
             if fa is not None and fa.branch_id != user.branch_id: raise HTTPException(status_code=403, detail="الحساب المالي تابع لفرع آخر")
     try:
         post_voucher(db, voucher)
