@@ -16,6 +16,10 @@ class UserCreate(BaseModel):
     branch_id: int | None = None
     role_id: int | None = None
 
+@router.get("/roles")
+def list_roles(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return db.scalars(select(Role).where(Role.is_active.is_(True)).order_by(Role.name)).all()
+
 @router.get("")
 def list_users(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return db.scalars(select(User).order_by(User.full_name)).all()
