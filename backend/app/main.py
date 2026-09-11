@@ -5,6 +5,7 @@ from app.api.accounts import router as accounts_router
 from app.api.branches import router as branches_router
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
+from app.api.reports import router as reports_router
 from app.api.parties import router as parties_router
 from app.api.settings import router as settings_router
 from app.api.travel import router as travel_router
@@ -35,6 +36,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(reports_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["system"])
