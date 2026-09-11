@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db.session import get_db
 from app.models.travel import Pilgrim, ProgramBooking, TravelProgram, VisaService
+from app.models.party import Party
 from app.models.user import User
 
 router = APIRouter(prefix="/travel", tags=["الحج والعمرة"])
@@ -81,15 +82,13 @@ def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_use
 @router.post("/bookings", status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     program = db.get(TravelProgram, payload.program_id)
-    if not program or not program.is_active:
+    if not program or not program.is_active or (user.branch_id is not None and program.branch_id not in (None,user.branch_id)):
         raise HTTPException(404, "البرنامج غير موجود أو غير نشط")
     pilgrim = db.get(Pilgrim, payload.pilgrim_id)
     if not pilgrim or (user.branch_id is not None and pilgrim.branch_id not in (None,user.branch_id)):
         raise HTTPException(404, "المعتمر أو الحاج غير موجود")
-    if payload.customer_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.customer_id):
+    if payload.customer_id is not None and not db.get(Party, payload.customer_id):
         raise HTTPException(400, "العميل غير موجود")
-    if not db.get(Pilgrim, payload.pilgrim_id):
-        raise HTTPException(404, "المعتمر أو الحاج غير موجود")
     if payload.customer_type not in {"direct", "agency"}:
         raise HTTPException(400, "نوع العميل يجب أن يكون مباشر أو وكالة")
     booked = db.scalar(select(func.count(ProgramBooking.id)).where(ProgramBooking.program_id == program.id, ProgramBooking.status.in_(["reserved", "confirmed"]))) or 0
@@ -113,10 +112,10 @@ def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user))
 
 @router.post("/visas", status_code=201)
 def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(Pilgrim, payload.pilgrim_id):
-        raise HTTPException(404, "المعتمر أو الحاج غير موجود")
-    if payload.customer_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.customer_id): raise HTTPException(400, "العميل غير موجود")
-    if payload.supplier_id is not None and not db.get(__import__("app.models.party", fromlist=["Party"]).Party, payload.supplier_id): raise HTTPException(400, "المورد غير موجود")
+    pilgrim = db.get(Pilgrim, payload.pilgrim_id)
+    if not pilgrim or (user.branch_id is not None and pilgrim.branch_id not in (None,user.branch_id)): raise HTTPException(404, "المعتمر أو الحاج غير موجود")
+    if payload.customer_id is not None and not db.get(Party, payload.customer_id): raise HTTPException(400, "العميل غير موجود")
+    if payload.supplier_id is not None and not db.get(Party, payload.supplier_id): raise HTTPException(400, "المورد غير موجود")
     visa = VisaService(**payload.model_dump(), profit=payload.sale_price - payload.supplier_cost, branch_id=user.branch_id)
     db.add(visa); db.commit(); db.refresh(visa)
     return visa
