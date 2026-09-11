@@ -13,3 +13,6 @@ class Party(Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    code: Mapped[str | None] = mapped_column(String(40), unique=True, index=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
