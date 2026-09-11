@@ -35,6 +35,7 @@ class VoucherOut(VoucherCreate):
 def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     try:
         voucher = create_voucher(db, **payload.model_dump(), created_by=user.id)
+        voucher.branch_id = user.branch_id
         db.commit()
         db.refresh(voucher)
         return voucher
@@ -71,3 +72,13 @@ def cancel(voucher_id: int, db: Session = Depends(get_db), _: User = Depends(get
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{voucher_id}/print-data")
+def print_data(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    voucher = db.get(Voucher, voucher_id)
+    if not voucher:
+        raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
+        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
+    return {"voucher": VoucherOut.model_validate(voucher), "printed_by": user.full_name, "printed_by_username": user.username, "branch_id": user.branch_id}
