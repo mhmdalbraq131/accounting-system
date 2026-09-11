@@ -18,6 +18,10 @@ def create_journal(
     created_by: int | None = None,
     status: str = "draft",
 ) -> JournalEntry:
+    if not entry_number or not str(entry_number).strip():
+        raise ValueError("رقم القيد مطلوب")
+    if not description or not str(description).strip():
+        raise ValueError("وصف القيد مطلوب")
     if len(lines) < 2:
         raise ValueError("القيد يجب أن يحتوي على سطرين على الأقل")
 
@@ -39,6 +43,8 @@ def create_journal(
     db.flush()
 
     for line in lines:
+        if not line.get("account_id"):
+            raise ValueError("كل سطر يجب أن يحتوي على حساب")
         debit = Decimal(str(line.get("debit", 0)))
         credit = Decimal(str(line.get("credit", 0)))
         if debit < 0 or credit < 0 or (debit > 0 and credit > 0):
