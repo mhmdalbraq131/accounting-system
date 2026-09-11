@@ -21,3 +21,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict[str, str
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
     return {"access_token": create_access_token(user.id), "token_type": "bearer"}
+
+
+@router.get("/me")
+def me(user: User = Depends(__import__("app.auth", fromlist=["get_current_user"]).get_current_user)) -> dict[str, object]:
+    return {"id": user.id, "username": user.username, "full_name": user.full_name, "branch_id": user.branch_id, "is_active": user.is_active}
