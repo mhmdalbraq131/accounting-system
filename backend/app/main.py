@@ -7,6 +7,7 @@ from app.api.currencies import router as currencies_router
 from app.api.financial import router as financial_router
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
+from app.api.expenses import router as expenses_router
 from app.api.reports import router as reports_router
 from app.api.parties import router as parties_router
 from app.api.settings import router as settings_router
@@ -40,6 +41,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(expenses_router, prefix="/api/v1")
 app.include_router(reports_router, prefix="/api/v1")
 
 
