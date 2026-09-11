@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
 from app.models.account import Account
+from app.models.currency import Currency
+from app.models.exchange_rate import ExchangeRate
 from app.models.journal import JournalEntry
 from app.models.voucher import Voucher
 
@@ -13,7 +15,7 @@ VALID_TYPES = {"receipt", "payment", "transfer"}
 
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date,
                    amount: Decimal, description: str, source_account_id: int | None,
-                   destination_account_id: int | None, created_by: int | None = None) -> Voucher:
+                   destination_account_id: int | None, currency_id: int | None = None, exchange_rate: Decimal | None = None, created_by: int | None = None) -> Voucher:
     if voucher_type not in VALID_TYPES:
         raise ValueError("نوع السند غير مدعوم")
     amount = Decimal(str(amount))
@@ -28,11 +30,21 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         if not account or not account.is_active:
             raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
 
+    if currency_id is not None:
+        currency = db.get(Currency, currency_id)
+        if not currency or not currency.is_active: raise ValueError("العملة غير موجودة أو غير نشطة")
+        if currency.is_base: exchange_rate = Decimal("1")
+        elif exchange_rate is None:
+            rate = db.query(ExchangeRate).filter(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()).first()
+            if not rate: raise ValueError("يجب تحديد سعر صرف للعملة")
+            exchange_rate = rate.rate_to_base
+        if Decimal(str(exchange_rate)) <= 0: raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
     voucher = Voucher(
         voucher_number=voucher_number, voucher_type=voucher_type, voucher_date=voucher_date,
         description=description, amount=amount, source_account_id=source_account_id,
         destination_account_id=destination_account_id, created_by=created_by,
-        status="draft", created_at=datetime.utcnow(),
+        status="draft", created_at=datetime.utcnow(), currency_id=currency_id, exchange_rate=exchange_rate,
+        base_amount=amount * Decimal(str(exchange_rate)) if exchange_rate is not None else amount,
     )
     db.add(voucher)
     db.flush()
