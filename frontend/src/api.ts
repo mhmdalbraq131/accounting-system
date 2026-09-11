@@ -24,3 +24,9 @@ export const updateSetting = (key: string, value: string) => api<Setting>(`/sett
 export const getPrograms = () => api<Program[]>("/travel/programs");
 export const getPilgrims = () => api<Pilgrim[]>("/travel/pilgrims");
 export const getDashboard = () => api<Dashboard>("/dashboard");
+
+export type Branch = { id:number; code:string; name_ar:string; address:string|null; phone:string|null; is_main:boolean; is_active:boolean };
+export type User = { id:number; username:string; full_name:string; branch_id:number|null; is_active:boolean };
+export const getBranches = () => api<Branch[]>("/branches");
+export const getUsers = () => api<User[]>("/users");
+export const getMe = () => api<{id:number;username:string;full_name:string;branch_id:number|null;is_active:boolean}>("/auth/me");
