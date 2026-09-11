@@ -75,11 +75,12 @@ def update_party(
     party_id: int,
     payload: PartyCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
+    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
     if payload.party_type not in {"customer", "supplier", "both"}:
         raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
     for key, value in payload.model_dump().items():
@@ -105,11 +106,13 @@ def disable_party(
 
 
 @router.get("/{party_id}/statement")
-def party_statement(party_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def party_statement(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
-    # كشف الحساب الحالي يعتمد على القيود المحاسبية الموصوفة برقم/اسم الطرف.
-    debit = db.scalar(select(func.coalesce(func.sum(JournalLine.debit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalEntry.description.contains(party.name))) or 0
-    credit = db.scalar(select(func.coalesce(func.sum(JournalLine.credit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalEntry.description.contains(party.name))) or 0
+    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
+    if party.account_id is None:
+        return {"party_id": party.id, "party_name": party.name, "party_type": party.party_type, "total_debit": 0, "total_credit": 0, "balance": 0, "warning": "لم يتم ربط الطرف بحساب محاسبي"}
+    debit = db.scalar(select(func.coalesce(func.sum(JournalLine.debit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id)) or 0
+    credit = db.scalar(select(func.coalesce(func.sum(JournalLine.credit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id)) or 0
     return {"party_id": party.id, "party_name": party.name, "party_type": party.party_type, "total_debit": debit, "total_credit": credit, "balance": debit - credit}
