@@ -35,9 +35,11 @@ def list_parties(
     party_type: str | None = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     query = select(Party).order_by(Party.id.desc())
+    if user.branch_id is not None:
+        query = query.where((Party.branch_id == user.branch_id) | Party.branch_id.is_(None))
     if party_type:
         if party_type not in {"customer", "supplier", "both"}:
             raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
@@ -51,7 +53,7 @@ def list_parties(
 def create_party(
     payload: PartyCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     if payload.party_type not in {"customer", "supplier", "both"}:
         raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
@@ -61,7 +63,7 @@ def create_party(
         account = db.get(Account, account_id)
         if not account or not account.is_active:
             raise HTTPException(400, "الحساب المالي غير موجود أو غير نشط")
-    party = Party(**data)
+    party = Party(**data, branch_id=user.branch_id)
     db.add(party)
     db.commit()
     db.refresh(party)
