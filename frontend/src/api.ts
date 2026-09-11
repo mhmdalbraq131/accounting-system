@@ -69,3 +69,5 @@ export const cancelVoucher = (id:number) => api<any>(`/vouchers/${id}/cancel`,{m
 
 export const getRoles = () => api<any[]>("/users/roles");
 export const deleteParty = (id:number) => api<any>(`/parties/${id}`,{method:"DELETE"});
+
+export const login = (username:string,password:string) => api<{access_token:string;token_type:string}>("/auth/login",{method:"POST",body:JSON.stringify({username,password})});
