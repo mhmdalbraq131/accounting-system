@@ -48,6 +48,13 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("", response_model=list[VoucherOut])
+def list_vouchers(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    stmt = select(Voucher).order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
+    if user.branch_id is not None:
+        stmt = stmt.where((Voucher.branch_id == user.branch_id) | Voucher.branch_id.is_(None))
+    return list(db.scalars(stmt))
+
 @router.post("/{voucher_id}/post", response_model=VoucherOut)
 def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
