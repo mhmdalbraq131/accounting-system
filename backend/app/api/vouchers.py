@@ -3,7 +3,8 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select\nfrom sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.accounting.voucher_service import cancel_voucher, create_voucher, post_voucher
