@@ -55,7 +55,7 @@ export const createParty = (payload: {name:string;party_type:string;phone?:strin
 export const getParties = (type?:string) => api<any[]>(`/parties${type?("?party_type="+encodeURIComponent(type)):""}`);
 export const getAccounts = () => api<any[]>("/accounts");
 export const getFinancial = () => api<any[]>("/financial-accounts");
-export const getCurrencies = () => api<any[]>("/currencies");
+
 export const getVouchers = () => api<any[]>("/vouchers");
 export const getFinancialSummary = () => api<any>("/reports/financial-summary");
 export const getVisaServices = () => api<any[]>("/travel/visas");
