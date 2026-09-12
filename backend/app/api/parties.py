@@ -30,6 +30,21 @@ class PartyOut(PartyCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _validate_account(db: Session, account_id: int | None, user: User) -> None:
+    if account_id is None:
+        return
+    account = db.get(Account, account_id)
+    if not account or not account.is_active:
+        raise HTTPException(400, "الحساب المحاسبي غير موجود أو غير نشط")
+    if user.branch_id is not None and account.branch_id not in (None, user.branch_id):
+        raise HTTPException(403, "الحساب تابع لفرع آخر")
+
+
+def _validate_party_scope(party: Party, user: User) -> None:
+    if user.branch_id is not None and party.branch_id not in (None, user.branch_id):
+        raise HTTPException(403, "الطرف تابع لفرع آخر")
+
+
 @router.get("", response_model=list[PartyOut])
 def list_parties(
     party_type: str | None = None,
@@ -59,13 +74,7 @@ def create_party(
         raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
     data = payload.model_dump()
     account_id = data.pop("account_id", None)
-    if account_id is not None:
-        account = db.get(Account, account_id)
-        if not account or not account.is_active:
-            raise HTTPException(400, "الحساب المالي غير موجود أو غير نشط")
-    if account_id is not None and user.branch_id is not None:
-        account = db.get(Account, account_id)
-        if account.branch_id not in (None, user.branch_id): raise HTTPException(403, "الحساب تابع لفرع آخر")
+    _validate_account(db, account_id, user)
     party = Party(**data, account_id=account_id, branch_id=user.branch_id)
     db.add(party)
     db.commit()
@@ -83,9 +92,10 @@ def update_party(
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
-    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
+    _validate_party_scope(party, user)
     if payload.party_type not in {"customer", "supplier", "both"}:
         raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
+    _validate_account(db, payload.account_id, user)
     for key, value in payload.model_dump().items():
         setattr(party, key, value)
     db.commit()
@@ -96,20 +106,25 @@ def update_party(
 @router.delete("/{party_id}", response_model=PartyOut)
 def delete_party(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     party = db.get(Party, party_id)
-    if not party: raise HTTPException(404, "الطرف غير موجود")
-    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
+    if not party:
+        raise HTTPException(404, "الطرف غير موجود")
+    _validate_party_scope(party, user)
     party.is_active = False
-    db.commit(); db.refresh(party); return party
+    db.commit()
+    db.refresh(party)
+    return party
+
 
 @router.post("/{party_id}/disable", response_model=PartyOut)
 def disable_party(
     party_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
+    _validate_party_scope(party, user)
     party.is_active = False
     db.commit()
     db.refresh(party)
@@ -121,9 +136,35 @@ def party_statement(party_id: int, db: Session = Depends(get_db), user: User = D
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
-    if user.branch_id is not None and party.branch_id not in (None, user.branch_id): raise HTTPException(403, "الطرف تابع لفرع آخر")
+    _validate_party_scope(party, user)
     if party.account_id is None:
-        return {"party_id": party.id, "party_name": party.name, "party_type": party.party_type, "total_debit": 0, "total_credit": 0, "balance": 0, "warning": "لم يتم ربط الطرف بحساب محاسبي"}
-    debit = db.scalar(select(func.coalesce(func.sum(JournalLine.debit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id)) or 0
-    credit = db.scalar(select(func.coalesce(func.sum(JournalLine.credit), 0)).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id)) or 0
-    return {"party_id": party.id, "party_name": party.name, "party_type": party.party_type, "total_debit": debit, "total_credit": credit, "balance": debit - credit}
+        return {
+            "party_id": party.id,
+            "party_name": party.name,
+            "party_type": party.party_type,
+            "total_debit": 0,
+            "total_credit": 0,
+            "balance": 0,
+            "warning": "لم يتم ربط الطرف بحساب محاسبي",
+        }
+
+    query = (
+        select(
+            func.coalesce(func.sum(JournalLine.debit), 0),
+            func.coalesce(func.sum(JournalLine.credit), 0),
+        )
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .where(
+            JournalEntry.status == "posted",
+            JournalLine.account_id == party.account_id,
+        )
+    )
+    debit, credit = db.execute(query).one()
+    return {
+        "party_id": party.id,
+        "party_name": party.name,
+        "party_type": party.party_type,
+        "total_debit": debit,
+        "total_credit": credit,
+        "balance": debit - credit,
+    }
