@@ -12,12 +12,14 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.voucher import Voucher
 from app.models.financial import FinancialAccount
+from app.models.account import Account
+from app.models.settings import SystemSetting
 
 router = APIRouter(prefix="/vouchers", tags=["السندات"])
 
 
 class VoucherCreate(BaseModel):
-    voucher_number: str
+    voucher_number: str | None = None
     voucher_type: str
     voucher_date: date
     amount: Decimal
@@ -30,15 +32,77 @@ class VoucherCreate(BaseModel):
 
 class VoucherOut(VoucherCreate):
     id: int
+    voucher_number: str
     status: str
     journal_entry_id: int | None
     model_config = ConfigDict(from_attributes=True)
 
 
+def _setting_value(db: Session, key: str, default: str) -> str:
+    value = db.scalar(select(SystemSetting.value).where(SystemSetting.key == key))
+    return value or default
+
+
+def _next_voucher_number(db: Session, voucher_type: str, voucher_date: date) -> str:
+    prefix_defaults = {
+        "receipt": "RV",
+        "payment": "PV",
+        "transfer": "TV",
+    }
+    key_map = {
+        "receipt": "voucher_prefix_receipt",
+        "payment": "voucher_prefix_payment",
+        "transfer": "voucher_prefix_transfer",
+    }
+    prefix = _setting_value(db, key_map[voucher_type], prefix_defaults[voucher_type]).strip() or prefix_defaults[voucher_type]
+    base = f"{prefix}-{voucher_date:%Y}-"
+    rows = db.scalars(
+        select(Voucher.voucher_number)
+        .where(Voucher.voucher_number.like(f"{base}%"))
+        .order_by(Voucher.id.desc())
+        .limit(1000)
+    ).all()
+    used = set()
+    for value in rows:
+        try:
+            used.add(int(value.rsplit("-", 1)[1]))
+        except (ValueError, IndexError):
+            continue
+    sequence = 1
+    while sequence in used:
+        sequence += 1
+    return f"{base}{sequence:05d}"
+
+
+def _validate_account_branch(db: Session, account_id: int, user: User) -> None:
+    account = db.get(Account, account_id)
+    if not account or not account.is_active:
+        raise HTTPException(status_code=400, detail="أحد الحسابات المحددة غير موجود أو غير نشط")
+    if user.branch_id is not None and account.branch_id not in (None, user.branch_id):
+        raise HTTPException(status_code=403, detail="الحساب تابع لفرع آخر")
+
+
 @router.post("", response_model=VoucherOut, status_code=201)
 def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if payload.voucher_type not in {"receipt", "payment", "transfer"}:
+        raise HTTPException(status_code=400, detail="نوع السند غير مدعوم")
+    _validate_account_branch(db, payload.source_account_id, user)
+    _validate_account_branch(db, payload.destination_account_id, user)
+    voucher_number = (payload.voucher_number or "").strip() or _next_voucher_number(db, payload.voucher_type, payload.voucher_date)
     try:
-        voucher = create_voucher(db, **payload.model_dump(), created_by=user.id)
+        voucher = create_voucher(
+            db,
+            voucher_number=voucher_number,
+            voucher_type=payload.voucher_type,
+            voucher_date=payload.voucher_date,
+            amount=payload.amount,
+            description=payload.description,
+            source_account_id=payload.source_account_id,
+            destination_account_id=payload.destination_account_id,
+            currency_id=payload.currency_id,
+            exchange_rate=payload.exchange_rate,
+            created_by=user.id,
+        )
         voucher.branch_id = user.branch_id
         db.commit()
         db.refresh(voucher)
@@ -55,6 +119,7 @@ def list_vouchers(db: Session = Depends(get_db), user: User = Depends(get_curren
         stmt = stmt.where((Voucher.branch_id == user.branch_id) | Voucher.branch_id.is_(None))
     return list(db.scalars(stmt))
 
+
 @router.post("/{voucher_id}/post", response_model=VoucherOut)
 def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
@@ -65,7 +130,8 @@ def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(ge
     if user.branch_id is not None:
         for account_id in (voucher.source_account_id, voucher.destination_account_id):
             other = db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == account_id, FinancialAccount.branch_id != user.branch_id))
-            if other is not None: raise HTTPException(status_code=403, detail="الحساب المالي تابع لفرع آخر")
+            if other is not None:
+                raise HTTPException(status_code=403, detail="الحساب المالي تابع لفرع آخر")
     try:
         post_voucher(db, voucher)
         db.commit()
