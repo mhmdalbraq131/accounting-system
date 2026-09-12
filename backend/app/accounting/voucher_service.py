@@ -1,21 +1,43 @@
 from datetime import date, datetime
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
 from app.models.account import Account
 from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
+from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry
 from app.models.voucher import Voucher
 
 VALID_TYPES = {"receipt", "payment", "transfer"}
 
 
-def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date,
-                   amount: Decimal, description: str, source_account_id: int | None,
-                   destination_account_id: int | None, currency_id: int | None = None, exchange_rate: Decimal | None = None, created_by: int | None = None) -> Voucher:
+def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> FinancialAccount | None:
+    return db.scalar(
+        select(FinancialAccount).where(
+            FinancialAccount.ledger_account_id == ledger_account_id,
+            FinancialAccount.active.is_(True),
+        )
+    )
+
+
+def create_voucher(
+    db: Session,
+    *,
+    voucher_number: str,
+    voucher_type: str,
+    voucher_date: date,
+    amount: Decimal,
+    description: str,
+    source_account_id: int | None,
+    destination_account_id: int | None,
+    currency_id: int | None = None,
+    exchange_rate: Decimal | None = None,
+    created_by: int | None = None,
+) -> Voucher:
     voucher_number = voucher_number.strip()
     description = description.strip()
     if not voucher_number:
@@ -33,26 +55,56 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
     if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first():
         raise ValueError("رقم السند مستخدم مسبقًا")
-    for account_id in (source_account_id, destination_account_id):
-        account = db.get(Account, account_id)
-        if not account or not account.is_active:
-            raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
+
+    source = db.get(Account, source_account_id)
+    destination = db.get(Account, destination_account_id)
+    if not source or not source.is_active or not destination or not destination.is_active:
+        raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
+
+    source_financial = _financial_account_for_ledger(db, source_account_id)
+    destination_financial = _financial_account_for_ledger(db, destination_account_id)
+
+    if voucher_type == "transfer":
+        if not source_financial or not destination_financial:
+            raise ValueError("سند التحويل يجب أن يكون بين صندوق أو بنك أو محفظة")
+    elif voucher_type == "receipt":
+        if not destination_financial:
+            raise ValueError("سند القبض يجب أن يكون حساب الاستلام صندوقًا أو بنكًا أو محفظة")
+    elif voucher_type == "payment":
+        if not source_financial:
+            raise ValueError("سند الصرف يجب أن يكون حساب الدفع صندوقًا أو بنكًا أو محفظة")
 
     if currency_id is not None:
         currency = db.get(Currency, currency_id)
-        if not currency or not currency.is_active: raise ValueError("العملة غير موجودة أو غير نشطة")
-        if currency.is_base: exchange_rate = Decimal("1")
+        if not currency or not currency.is_active:
+            raise ValueError("العملة غير موجودة أو غير نشطة")
+        if currency.is_base:
+            exchange_rate = Decimal("1")
         elif exchange_rate is None:
-            rate = db.query(ExchangeRate).filter(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()).first()
-            if not rate: raise ValueError("يجب تحديد سعر صرف للعملة")
+            rate = db.query(ExchangeRate).filter(
+                ExchangeRate.currency_id == currency_id
+            ).order_by(ExchangeRate.effective_at.desc()).first()
+            if not rate:
+                raise ValueError("يجب تحديد سعر صرف للعملة")
             exchange_rate = rate.rate_to_base
-        if Decimal(str(exchange_rate)) <= 0: raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
+        if Decimal(str(exchange_rate)) <= 0:
+            raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
+
+    base_amount = amount * Decimal(str(exchange_rate)) if exchange_rate is not None else amount
     voucher = Voucher(
-        voucher_number=voucher_number, voucher_type=voucher_type, voucher_date=voucher_date,
-        description=description, amount=amount, source_account_id=source_account_id,
-        destination_account_id=destination_account_id, created_by=created_by,
-        status="draft", created_at=datetime.utcnow(), currency_id=currency_id, exchange_rate=exchange_rate,
-        base_amount=amount * Decimal(str(exchange_rate)) if exchange_rate is not None else amount,
+        voucher_number=voucher_number,
+        voucher_type=voucher_type,
+        voucher_date=voucher_date,
+        description=description,
+        amount=amount,
+        source_account_id=source_account_id,
+        destination_account_id=destination_account_id,
+        created_by=created_by,
+        status="draft",
+        created_at=datetime.utcnow(),
+        currency_id=currency_id,
+        exchange_rate=exchange_rate,
+        base_amount=base_amount,
     )
     db.add(voucher)
     db.flush()
@@ -60,10 +112,12 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
 
 
 def _journal_lines(voucher: Voucher) -> list[dict]:
+    # القيد يُسجل بالعملة الأساسية؛ قيمة السند الأصلية تُحفظ في voucher.amount.
+    posted_amount = voucher.base_amount or voucher.amount
     # المصدر يُنقص (دائن)، والوجهة تُزاد (مدين).
     return [
-        {"account_id": voucher.destination_account_id, "debit": voucher.amount},
-        {"account_id": voucher.source_account_id, "credit": voucher.amount},
+        {"account_id": voucher.destination_account_id, "debit": posted_amount},
+        {"account_id": voucher.source_account_id, "credit": posted_amount},
     ]
 
 
@@ -71,9 +125,13 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     if voucher.status != "draft":
         raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
     entry = create_journal(
-        db, entry_number=f"JV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
-        description=voucher.description, lines=_journal_lines(voucher),
-        created_by=voucher.created_by, status="posted",
+        db,
+        entry_number=f"JV-{voucher.voucher_number}",
+        entry_date=voucher.voucher_date,
+        description=voucher.description,
+        lines=_journal_lines(voucher),
+        created_by=voucher.created_by,
+        status="posted",
     )
     entry.posted_at = datetime.utcnow()
     voucher.journal_entry_id = entry.id
@@ -94,9 +152,13 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
         for line in original.lines
     ]
     reversal = create_journal(
-        db, entry_number=f"REV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
+        db,
+        entry_number=f"REV-{voucher.voucher_number}",
+        entry_date=voucher.voucher_date,
         description=f"عكس السند {voucher.voucher_number}: {voucher.description}",
-        lines=lines, created_by=voucher.created_by, status="posted",
+        lines=lines,
+        created_by=voucher.created_by,
+        status="posted",
     )
     reversal.posted_at = datetime.utcnow()
     voucher.status = "cancelled"
