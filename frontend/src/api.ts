@@ -30,11 +30,20 @@ export type User = { id:number; username:string; full_name:string; branch_id:num
 export const getBranches = () => api<Branch[]>("/branches");
 export const getUsers = () => api<User[]>("/users");
 export const getMe = () => api<{id:number;username:string;full_name:string;branch_id:number|null;is_active:boolean}>("/auth/me");
-export const getVoucherPrintData = (id:number) => api<{voucher:unknown;printed_by:string;printed_by_username:string;branch_id:number|null}>(`/vouchers/${id}/print-data`);
+export const getVoucherPrintData = (id:number) => api<{voucher:any;printed_by:string;printed_by_username:string;branch_id:number|null}>(`/vouchers/${id}/print-data`);
+export const printVoucher = async (id:number) => {
+  const data = await getVoucherPrintData(id);
+  const voucher = data.voucher ?? {};
+  const printWindow = window.open("", "_blank", "width=900,height=700");
+  if (!printWindow) throw new Error("تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة ثم أعد المحاولة.");
+  const typeLabel: Record<string,string> = { receipt: "سند قبض", payment: "سند صرف", transfer: "سند تحويل" };
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>\"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch] ?? ch));
+  printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(typeLabel[voucher.voucher_type] ?? "سند مالي")} ${escapeHtml(voucher.voucher_number)}</title><style>body{font-family:Arial,sans-serif;margin:40px;color:#111}header{display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:14px;margin-bottom:24px}.meta{line-height:1.9}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #bbb;padding:10px;text-align:right}th{background:#f3f3f3}.amount{font-size:24px;font-weight:700}.footer{margin-top:50px;display:flex;justify-content:space-between}.muted{color:#666;font-size:12px}</style></head><body><header><div><h1>نظام المحاسبة</h1><div>وكالة الحج والعمرة والسفر</div></div><div class="meta"><b>${escapeHtml(typeLabel[voucher.voucher_type] ?? voucher.voucher_type)}</b><br>رقم السند: ${escapeHtml(voucher.voucher_number)}<br>التاريخ: ${escapeHtml(voucher.voucher_date)}</div></header><div class="meta"><b>البيان:</b> ${escapeHtml(voucher.description)}</div><table><tr><th>من الحساب</th><td>${escapeHtml(voucher.source_account_id)}</td></tr><tr><th>إلى الحساب</th><td>${escapeHtml(voucher.destination_account_id)}</td></tr><tr><th>المبلغ</th><td class="amount">${escapeHtml(voucher.amount)}</td></tr><tr><th>الحالة</th><td>${escapeHtml(voucher.status)}</td></tr></table><div class="footer"><div>طبع بواسطة: <b>${escapeHtml(data.printed_by)}</b> (${escapeHtml(data.printed_by_username)})</div><div class="muted">رقم السند ${escapeHtml(voucher.voucher_number)}</div></div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}</script></body></html>`);
+  printWindow.document.close();
+};
 
 export const getCurrencies = () => api<any[]>("/currencies");
 export const getFinancialAccounts = () => api<any[]>("/financial-accounts");
-
 
 export const createProgram = (payload: {code:string;name_ar:string;program_type:string;season?:string;capacity:number;sale_price:number;supplier_cost:number}) =>
   api<Program>("/travel/programs", {method:"POST", body:JSON.stringify(payload)});
@@ -51,11 +60,9 @@ export const createUser = (payload: {username:string;full_name:string;password:s
 export const createParty = (payload: {name:string;party_type:string;phone?:string;address?:string;code?:string;email?:string;notes?:string;account_id?:number}) =>
   api<any>("/parties", {method:"POST", body:JSON.stringify(payload)});
 
-
 export const getParties = (type?:string) => api<any[]>(`/parties${type?("?party_type="+encodeURIComponent(type)):""}`);
 export const getAccounts = () => api<any[]>("/accounts");
 export const getFinancial = () => api<any[]>("/financial-accounts");
-
 export const getVouchers = () => api<any[]>("/vouchers");
 export const getFinancialSummary = () => api<any>("/reports/financial-summary");
 export const getVisaServices = () => api<any[]>("/travel/visas");
@@ -69,8 +76,6 @@ export const cancelVoucher = (id:number) => api<any>(`/vouchers/${id}/cancel`,{m
 
 export const getRoles = () => api<any[]>("/users/roles");
 export const deleteParty = (id:number) => api<any>(`/parties/${id}`,{method:"DELETE"});
-
 export const login = (username:string,password:string) => api<{access_token:string;token_type:string}>("/auth/login",{method:"POST",body:JSON.stringify({username,password})});
-
 export const getExpenses = () => api<any[]>("/expenses");
 export const createExpense = (payload:any) => api<any>("/expenses",{method:"POST",body:JSON.stringify(payload)});
