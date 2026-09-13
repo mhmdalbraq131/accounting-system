@@ -1,4 +1,5 @@
-from datetime import date, datetime
+from datetime import datetime
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -37,6 +38,7 @@ def create_voucher(
     currency_id: int | None = None,
     exchange_rate: Decimal | None = None,
     created_by: int | None = None,
+    branch_id: int | None = None,
 ) -> Voucher:
     voucher_number = voucher_number.strip()
     description = description.strip()
@@ -100,6 +102,7 @@ def create_voucher(
         source_account_id=source_account_id,
         destination_account_id=destination_account_id,
         created_by=created_by,
+        branch_id=branch_id,
         status="draft",
         created_at=datetime.utcnow(),
         currency_id=currency_id,
@@ -112,9 +115,7 @@ def create_voucher(
 
 
 def _journal_lines(voucher: Voucher) -> list[dict]:
-    # القيد يُسجل بالعملة الأساسية؛ قيمة السند الأصلية تُحفظ في voucher.amount.
     posted_amount = voucher.base_amount or voucher.amount
-    # المصدر يُنقص (دائن)، والوجهة تُزاد (مدين).
     return [
         {"account_id": voucher.destination_account_id, "debit": posted_amount},
         {"account_id": voucher.source_account_id, "credit": posted_amount},
@@ -131,6 +132,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
         description=voucher.description,
         lines=_journal_lines(voucher),
         created_by=voucher.created_by,
+        branch_id=voucher.branch_id,
         status="posted",
     )
     entry.posted_at = datetime.utcnow()
@@ -158,6 +160,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
         description=f"عكس السند {voucher.voucher_number}: {voucher.description}",
         lines=lines,
         created_by=voucher.created_by,
+        branch_id=voucher.branch_id,
         status="posted",
     )
     reversal.posted_at = datetime.utcnow()
