@@ -27,7 +27,7 @@ class ExpenseIn(BaseModel):
     amount: Decimal = Field(gt=0)
     supplier_id: int | None = None
     program_id: int | None = None
-    expense_account_id: int
+    expense_account_id: int | None = None
     payment_account_id: int | None = None
 
 
@@ -42,6 +42,22 @@ def _validate_account(db: Session, user: User, account_id: int, label: str) -> A
     if not _branch_allowed(user, account.branch_id):
         raise HTTPException(403, f"{label} تابع لفرع آخر")
     return account
+
+
+def _resolve_expense_account(db: Session, user: User, account_id: int | None) -> int:
+    if account_id is not None:
+        account = _validate_account(db, user, account_id, "حساب المصروف")
+        if account.account_type != "expense":
+            raise HTTPException(400, "الحساب المختار يجب أن يكون من نوع المصروفات")
+        return account.id
+
+    stmt = select(Account).where(Account.account_type == "expense", Account.is_active.is_(True))
+    if user.branch_id is not None:
+        stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
+    candidates = list(db.scalars(stmt.order_by(Account.code)))
+    if len(candidates) == 1:
+        return candidates[0].id
+    raise HTTPException(400, "يجب تحديد حساب المصروف؛ يوجد أكثر من حساب مصروف متاح أو لا يوجد حساب مصروف")
 
 
 def _next_expense_number(db: Session, year: int) -> str:
@@ -75,10 +91,12 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
     if db.scalar(select(Expense).where(Expense.expense_number == expense_number)):
         raise HTTPException(409, "رقم المصروف مستخدم مسبقًا")
 
-    _validate_account(db, user, payload.expense_account_id, "حساب المصروف")
+    expense_account_id = _resolve_expense_account(db, user, payload.expense_account_id)
     if payload.payment_account_id is not None:
-        _validate_account(db, user, payload.payment_account_id, "حساب الدفع")
-        if payload.payment_account_id == payload.expense_account_id:
+        payment_account = _validate_account(db, user, payload.payment_account_id, "حساب الدفع")
+        if payment_account.account_type not in {"asset"}:
+            raise HTTPException(400, "حساب الدفع يجب أن يكون حساب أصول")
+        if payload.payment_account_id == expense_account_id:
             raise HTTPException(400, "حساب المصروف وحساب الدفع يجب أن يكونا مختلفين")
 
     if payload.supplier_id is not None:
@@ -98,7 +116,7 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
         amount=payload.amount,
         supplier_id=payload.supplier_id,
         program_id=payload.program_id,
-        expense_account_id=payload.expense_account_id,
+        expense_account_id=expense_account_id,
         payment_account_id=payload.payment_account_id,
         created_by=user.id,
         branch_id=user.branch_id,
@@ -122,8 +140,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
     if expense.journal_entry_id:
         raise HTTPException(409, "المصروف مرتبط بقيد محاسبي مسبقًا")
 
-    _validate_account(db, user, expense.expense_account_id, "حساب المصروف")
-
+    expense_account_id = _resolve_expense_account(db, user, expense.expense_account_id)
     credit_account_id = expense.payment_account_id
     if credit_account_id is None and expense.supplier_id is not None:
         supplier = db.get(Party, expense.supplier_id)
@@ -137,7 +154,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         raise HTTPException(400, "يجب تحديد حساب الدفع أو مورد مرتبط بحساب محاسبي")
 
     _validate_account(db, user, credit_account_id, "الحساب الدائن")
-    if credit_account_id == expense.expense_account_id:
+    if credit_account_id == expense_account_id:
         raise HTTPException(400, "الحساب المدين والدائن يجب أن يكونا مختلفين")
 
     try:
@@ -147,13 +164,14 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
             entry_date=expense.expense_date,
             description=expense.description,
             lines=[
-                {"account_id": expense.expense_account_id, "debit": expense.amount, "credit": Decimal("0")},
+                {"account_id": expense_account_id, "debit": expense.amount, "credit": Decimal("0")},
                 {"account_id": credit_account_id, "debit": Decimal("0"), "credit": expense.amount},
             ],
             created_by=expense.created_by,
             status="posted",
         )
         entry.posted_at = datetime.utcnow()
+        expense.expense_account_id = expense_account_id
         expense.journal_entry_id = entry.id
         expense.status = "posted"
         expense.posted_at = datetime.utcnow()
@@ -194,7 +212,6 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
         )
         reversal.posted_at = datetime.utcnow()
         expense.status = "cancelled"
-        expense.posted_at = datetime.utcnow()
         db.commit()
         db.refresh(expense)
         return expense
