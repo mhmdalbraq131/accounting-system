@@ -16,6 +16,7 @@ def create_journal(
     description: str,
     lines: list[dict],
     created_by: int | None = None,
+    branch_id: int | None = None,
     status: str = "draft",
 ) -> JournalEntry:
     if not entry_number or not str(entry_number).strip():
@@ -37,6 +38,7 @@ def create_journal(
         entry_date=entry_date,
         description=description,
         created_by=created_by,
+        branch_id=branch_id,
         status=status,
     )
     db.add(entry)
