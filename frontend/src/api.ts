@@ -15,10 +15,12 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 
 export type Setting = { key: string; value: string; value_type: string; category: string; description_ar: string | null; is_editable: boolean };
-export type Program = { id: number; code: string; name_ar: string; program_type: string; season: string | null; departure_date: string | null; return_date: string | null; capacity: number; sale_price: string; supplier_cost: string; is_active: boolean };
+export type Program = { id: number; code: string; name_ar: string; program_type: string; season: string | null; departure_date: string | null; return_date: string | null; capacity: number; sale_price: string; supplier_cost: string; supplier_id: number | null; is_active: boolean };
 export type Pilgrim = { id: number; customer_id: number | null; full_name: string; passport_number: string | null; nationality: string | null; phone: string | null; visa_status: string; };
 export type Dashboard = { programs:number; pilgrims:number; bookings:number; visas:number; customers:number; suppliers:number; revenue:string; service_cost:string; gross_profit:string; expenses:string; net_profit:string; posted_journals:number };
 export type ReportParams = { from_date?: string; to_date?: string };
+export type Booking = { id:number; program_id:number; pilgrim_id:number; customer_id:number|null; sale_price:string; supplier_cost:string; paid_amount:string; remaining_amount:string; profit:string; customer_type:string; status:string; journal_entry_id:number|null; booked_at:string; branch_id:number|null };
+export type VisaService = { id:number; pilgrim_id:number; customer_id:number|null; supplier_id:number|null; visa_type:string; sale_price:string; supplier_cost:string; profit:string; status:string; journal_entry_id:number|null; created_at:string; branch_id:number|null };
 
 const queryParams = (params?: ReportParams) => {
   const query = new URLSearchParams();
@@ -32,6 +34,9 @@ export const getSettings = () => api<Setting[]>("/settings");
 export const updateSetting = (key: string, value: string) => api<Setting>(`/settings/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ value }) });
 export const getPrograms = () => api<Program[]>("/travel/programs");
 export const getPilgrims = () => api<Pilgrim[]>("/travel/pilgrims");
+export const getBookings = () => api<Booking[]>("/travel/bookings");
+export const postBooking = (id:number) => api<Booking>(`/travel/bookings/${id}/post`, { method:"POST" });
+export const cancelBooking = (id:number) => api<Booking>(`/travel/bookings/${id}/cancel`, { method:"POST" });
 export const getDashboard = () => api<Dashboard>("/dashboard");
 
 export type Branch = { id:number; code:string; name_ar:string; address:string|null; phone:string|null; is_main:boolean; is_active:boolean };
@@ -53,8 +58,7 @@ export const printVoucher = async (id:number) => {
 
 export const getCurrencies = () => api<any[]>("/currencies");
 export const getFinancialAccounts = () => api<any[]>("/financial-accounts");
-
-export const createProgram = (payload: {code:string;name_ar:string;program_type:string;season?:string;capacity:number;sale_price:number;supplier_cost:number}) => api<Program>("/travel/programs", {method:"POST", body:JSON.stringify(payload)});
+export const createProgram = (payload: {code:string;name_ar:string;program_type:string;season?:string;capacity:number;sale_price:number;supplier_cost:number;supplier_id?:number}) => api<Program>("/travel/programs", {method:"POST", body:JSON.stringify(payload)});
 export const createPilgrim = (payload: {full_name:string;passport_number?:string;nationality?:string;phone?:string;customer_id?:number}) => api<Pilgrim>("/travel/pilgrims", {method:"POST", body:JSON.stringify(payload)});
 export const createBranch = (payload: {code:string;name_ar:string;address?:string;phone?:string;is_main:boolean}) => api<Branch>("/branches", {method:"POST", body:JSON.stringify(payload)});
 export const createUser = (payload: {username:string;full_name:string;password:string;branch_id?:number;role_id?:number}) => api<User>("/users", {method:"POST", body:JSON.stringify(payload)});
@@ -70,8 +74,10 @@ export const getTrialBalance = (params?: ReportParams) => api<any>(`/reports/tri
 export const getProfitLoss = (params?: ReportParams) => api<any>(`/reports/profit-loss${queryParams(params)}`);
 export const getCashMovement = (params?: ReportParams) => api<any>(`/reports/cash-movement${queryParams(params)}`);
 export const getPartyReport = (partyId:number, params?: ReportParams) => api<any>(`/reports/party/${partyId}${queryParams(params)}`);
-export const getVisaServices = () => api<any[]>("/travel/visas");
-export const createVisa = (payload:any) => api<any>("/travel/visas",{method:"POST",body:JSON.stringify(payload)});
+export const getVisaServices = () => api<VisaService[]>("/travel/visas");
+export const createVisa = (payload:any) => api<VisaService>("/travel/visas",{method:"POST",body:JSON.stringify(payload)});
+export const postVisa = (id:number) => api<VisaService>(`/travel/visas/${id}/post`,{method:"POST"});
+export const cancelVisa = (id:number) => api<VisaService>(`/travel/visas/${id}/cancel`,{method:"POST"});
 export const createAccount = (payload:any) => api<any>("/accounts",{method:"POST",body:JSON.stringify(payload)});
 export const createFinancial = (payload:any) => api<any>("/financial-accounts",{method:"POST",body:JSON.stringify(payload)});
 export const createCurrency = (payload:any) => api<any>("/currencies",{method:"POST",body:JSON.stringify(payload)});
