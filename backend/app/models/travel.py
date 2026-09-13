@@ -19,6 +19,7 @@ class TravelProgram(Base):
     capacity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sale_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     supplier_cost: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("parties.id"), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
@@ -49,6 +50,7 @@ class ProgramBooking(Base):
     profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     customer_type: Mapped[str] = mapped_column(String(20), default="direct", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="reserved", nullable=False)
+    journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True, unique=True)
     booked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
 
@@ -64,5 +66,6 @@ class VisaService(Base):
     supplier_cost: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
