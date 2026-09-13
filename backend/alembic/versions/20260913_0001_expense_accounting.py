@@ -1,7 +1,7 @@
 """link expenses to accounting journals
 
 Revision ID: 20260913_0001
-Revises:
+Revises: 0002_travel_expenses_settings
 Create Date: 2026-09-13
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260913_0001"
-down_revision = None
+down_revision = "0002_travel_expenses_settings"
 branch_labels = None
 depends_on = None
 
