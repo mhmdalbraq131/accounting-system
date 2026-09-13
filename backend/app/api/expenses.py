@@ -168,6 +168,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
                 {"account_id": credit_account_id, "debit": Decimal("0"), "credit": expense.amount},
             ],
             created_by=expense.created_by,
+            branch_id=expense.branch_id,
             status="posted",
         )
         entry.posted_at = datetime.utcnow()
@@ -208,6 +209,7 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
                 for line in original.lines
             ],
             created_by=user.id,
+            branch_id=expense.branch_id,
             status="posted",
         )
         reversal.posted_at = datetime.utcnow()
