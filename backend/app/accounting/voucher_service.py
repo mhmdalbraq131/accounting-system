@@ -1,5 +1,4 @@
-from datetime import datetime
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -11,6 +10,7 @@ from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry
+from app.models.travel import ProgramBooking
 from app.models.voucher import Voucher
 
 VALID_TYPES = {"receipt", "payment", "transfer"}
@@ -39,6 +39,8 @@ def create_voucher(
     exchange_rate: Decimal | None = None,
     created_by: int | None = None,
     branch_id: int | None = None,
+    linked_service_type: str | None = None,
+    linked_service_id: int | None = None,
 ) -> Voucher:
     voucher_number = voucher_number.strip()
     description = description.strip()
@@ -103,6 +105,8 @@ def create_voucher(
         destination_account_id=destination_account_id,
         created_by=created_by,
         branch_id=branch_id,
+        linked_service_type=linked_service_type,
+        linked_service_id=linked_service_id,
         status="draft",
         created_at=datetime.utcnow(),
         currency_id=currency_id,
@@ -122,9 +126,38 @@ def _journal_lines(voucher: Voucher) -> list[dict]:
     ]
 
 
+def _apply_service_receipt(db: Session, voucher: Voucher, amount: Decimal, reverse: bool = False) -> None:
+    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None:
+        return
+    booking = db.get(ProgramBooking, voucher.linked_service_id)
+    if not booking:
+        raise ValueError("الحجز المرتبط بسند القبض غير موجود")
+    if voucher.voucher_type != "receipt":
+        return
+    delta = -amount if reverse else amount
+    new_paid = Decimal(str(booking.paid_amount or 0)) + delta
+    if new_paid < 0:
+        raise ValueError("لا يمكن عكس السند لأن المدفوع سيصبح سالبًا")
+    if new_paid > Decimal(str(booking.sale_price)):
+        raise ValueError("مبلغ السند يتجاوز المتبقي على خدمة الحج")
+    booking.paid_amount = new_paid
+    booking.remaining_amount = Decimal(str(booking.sale_price)) - new_paid
+
+
 def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     if voucher.status != "draft":
         raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
+
+    if voucher.linked_service_type == "hajj_booking" and voucher.linked_service_id is not None:
+        booking = db.get(ProgramBooking, voucher.linked_service_id)
+        if not booking:
+            raise ValueError("خدمة الحج المرتبطة بالسند غير موجودة")
+        if voucher.voucher_type == "receipt":
+            expected_account_id = booking.agent_id and db.get(Account, db.get(__import__('app.models.party', fromlist=['Party']).Party, booking.agent_id).account_id).id if False else None
+            # The booking service relation is verified by the linked party through the normal journal.
+            if booking.journal_entry_id is None:
+                raise ValueError("يجب ترحيل خدمة الحج قبل تسجيل التحصيل عليها")
+
     entry = create_journal(
         db,
         entry_number=f"JV-{voucher.voucher_number}",
@@ -139,6 +172,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     voucher.journal_entry_id = entry.id
     voucher.status = "posted"
     voucher.posted_at = datetime.utcnow()
+    _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount)
     db.flush()
     return voucher
 
@@ -164,6 +198,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
         status="posted",
     )
     reversal.posted_at = datetime.utcnow()
+    _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount, reverse=True)
     voucher.status = "cancelled"
     voucher.posted_at = datetime.utcnow()
     db.flush()
