@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createHajjBooking, createHajjQuota, createPilgrim, getAccounts, getFinancial, getHajjBookings, getHajjQuotas, getParties, getPrograms, postHajjBooking, type Booking, type HajjQuota, type Pilgrim, type Program } from "./api";
+import { createHajjBooking, createHajjQuota, createParty, createPilgrim, createProgram, getAccounts, getHajjBookings, getHajjQuotas, getParties, postHajjBooking, type Booking, type HajjQuota, type Pilgrim, type Program } from "./api";
 import HajjCollectionPanel from "./HajjCollectionPanel";
 
 const money = (v: string | number) => Number(v || 0).toLocaleString("ar-YE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const tabs = [["dashboard", "لوحة الحج"], ["pilgrims", "الحجاج"], ["quotas", "الحصص والموردون"], ["bookings", "الحجوزات والخدمات"], ["collections", "التحصيلات"], ["agents", "الوكلاء"]] as const;
+const tabs = [["dashboard", "لوحة الحج"], ["programs", "برامج الحج"], ["pilgrims", "الحجاج"], ["quotas", "الحصص والموردون"], ["bookings", "الحجوزات والخدمات"], ["collections", "التحصيلات"], ["agents", "الوكلاء"]] as const;
 
 export default function HajjPageTabs({ programs, pilgrims, suppliers, customers }: { programs: Program[]; pilgrims: Pilgrim[]; suppliers: any[]; customers: any[] }) {
   const [tab, setTab] = useState<(typeof tabs)[number][0]>("dashboard");
@@ -15,7 +15,9 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [pilgrimForm, setPilgrimForm] = useState({ full_name: "", passport_number: "", nationality: "", phone: "" });
+  const [programForm, setProgramForm] = useState({ code: "", name_ar: "", season: "", capacity: "0", sale_price: "", supplier_cost: "", supplier_id: "" });
   const [quotaForm, setQuotaForm] = useState({ name_ar: "حصة الحج", season: "", supplier_id: "", total_units: "118", unit_cost: "" });
+  const [agentForm, setAgentForm] = useState({ name: "", code: "", phone: "", account_id: "" });
   const [bookingForm, setBookingForm] = useState({ program_id: "", pilgrim_id: "", quota_id: "", agent_id: "", customer_id: "", party_mode: "agent", sale_price: "", supplier_cost: "" });
 
   const hajjPrograms = useMemo(() => programs.filter(p => p.program_type === "hajj" && p.is_active), [programs]);
@@ -29,10 +31,29 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
   }
   useEffect(() => { refresh(); }, []);
 
+  async function saveProgram(e: React.FormEvent) {
+    e.preventDefault(); setError(""); setMessage("");
+    try {
+      await createProgram({ code: programForm.code.trim(), name_ar: programForm.name_ar.trim(), program_type: "hajj", season: programForm.season || undefined, capacity: Number(programForm.capacity || 0), sale_price: Number(programForm.sale_price || 0), supplier_cost: Number(programForm.supplier_cost || 0), supplier_id: programForm.supplier_id ? Number(programForm.supplier_id) : undefined });
+      setProgramForm({ code: "", name_ar: "", season: "", capacity: "0", sale_price: "", supplier_cost: "", supplier_id: "" });
+      setMessage("تم إنشاء برنامج الحج. أغلق البرنامج القديم إداريًا عند انتهاء موسمه.");
+      window.location.reload();
+    } catch (e) { setError(e instanceof Error ? e.message : "تعذر إنشاء برنامج الحج"); }
+  }
+
   async function savePilgrim(e: React.FormEvent) {
     e.preventDefault(); setError(""); setMessage("");
     try { await createPilgrim({ ...pilgrimForm, passport_number: pilgrimForm.passport_number || undefined, nationality: pilgrimForm.nationality || undefined, phone: pilgrimForm.phone || undefined }); setPilgrimForm({ full_name: "", passport_number: "", nationality: "", phone: "" }); setMessage("تم تسجيل الحاج."); await refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : "تعذر تسجيل الحاج"); }
+  }
+
+  async function saveAgent(e: React.FormEvent) {
+    e.preventDefault(); setError(""); setMessage("");
+    try {
+      if (!agentForm.account_id) throw new Error("اختر حساب الوكيل المحاسبي");
+      await createParty({ name: agentForm.name.trim(), code: agentForm.code || undefined, phone: agentForm.phone || undefined, party_type: "agent", account_id: Number(agentForm.account_id) });
+      setAgentForm({ name: "", code: "", phone: "", account_id: "" }); setMessage("تم تسجيل الوكيل وربطه بالحساب المحاسبي."); await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "تعذر حفظ الوكيل"); }
   }
 
   async function saveQuota(e: React.FormEvent) {
@@ -60,7 +81,7 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
   }
 
   return <main className="page">
-    <div className="welcome"><div><span className="eyebrow">قسم الحج</span><h2>إدارة الحج</h2><p>كل وظيفة في تبويب مستقل: الحجاج، الحصص، الحجوزات، التحصيلات والوكلاء.</p></div></div>
+    <div className="welcome"><div><span className="eyebrow">قسم الحج</span><h2>إدارة الحج</h2><p>كل وظيفة في تبويب مستقل: البرامج، الحجاج، الحصص، الحجوزات، التحصيلات والوكلاء.</p></div></div>
     {(error || message) && <div className={error ? "error-banner" : "notice-banner"}>{error || message}</div>}
     <div className="quick-grid" style={{ marginBottom: 20 }}>{tabs.map(([id, label]) => <button key={id} className={tab === id ? "quick-btn active" : "quick-btn"} onClick={() => { setTab(id); setError(""); setMessage(""); }}><b>{label}</b><small>فتح</small></button>)}</div>
 
@@ -71,8 +92,10 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
         <div className="stat"><span>المتبقي</span><strong>{quotas.reduce((n, q) => n + q.remaining_units, 0)}</strong><small>حاج</small></div>
         <div className="stat"><span>الخدمات</span><strong>{bookings.length}</strong><small>حجز</small></div>
       </div>
-      <section className="panel"><div className="panel-head"><div><h3>مسار العمل</h3><p>سجل الحاج، أنشئ حصة مرتبطة بالمورد، اربط الخدمة بالوكيل أو العميل، ثم رحّلها والتحصيل يكون من تبويب التحصيلات.</p></div></div></section>
+      <section className="panel"><div className="panel-head"><div><h3>مسار العمل</h3><p>أنشئ برنامج الحج، سجل الحاج، أنشئ الحصة المرتبطة بالمورد، اربط الخدمة بالوكيل أو العميل، ثم رحّلها والتحصيل يكون من تبويب التحصيلات.</p></div></div></section>
     </>}
+
+    {tab === "programs" && <section className="panel"><div className="panel-head"><div><h3>برامج الحج</h3><p>برنامج الحج يحدد الموسم والطاقة والأسعار الافتراضية، بينما الحصة تحدد مصدر المقاعد والمورد الفعلي.</p></div></div><form className="form-grid" onSubmit={saveProgram}><label><span>رمز البرنامج</span><input value={programForm.code} onChange={e => setProgramForm({ ...programForm, code: e.target.value })} required /></label><label><span>اسم البرنامج</span><input value={programForm.name_ar} onChange={e => setProgramForm({ ...programForm, name_ar: e.target.value })} required /></label><label><span>الموسم</span><input value={programForm.season} onChange={e => setProgramForm({ ...programForm, season: e.target.value })} placeholder="1448هـ" /></label><label><span>السعة الافتراضية</span><input type="number" min="0" value={programForm.capacity} onChange={e => setProgramForm({ ...programForm, capacity: e.target.value })} /></label><label><span>سعر البيع الافتراضي</span><input type="number" min="0" step="0.01" value={programForm.sale_price} onChange={e => setProgramForm({ ...programForm, sale_price: e.target.value })} /></label><label><span>تكلفة المورد الافتراضية</span><input type="number" min="0" step="0.01" value={programForm.supplier_cost} onChange={e => setProgramForm({ ...programForm, supplier_cost: e.target.value })} /></label><label><span>مورد البرنامج الافتراضي</span><select value={programForm.supplier_id} onChange={e => setProgramForm({ ...programForm, supplier_id: e.target.value })}><option value="">بدون مورد افتراضي</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label><div className="form-actions"><button className="primary">حفظ برنامج الحج</button></div></form><div className="table-wrap" style={{ marginTop: 20 }}><table><thead><tr><th>الرمز</th><th>البرنامج</th><th>الموسم</th><th>السعة</th><th>البيع</th><th>التكلفة</th><th>الحالة</th></tr></thead><tbody>{hajjPrograms.map(p => <tr key={p.id}><td>{p.code}</td><td>{p.name_ar}</td><td>{p.season || "—"}</td><td>{p.capacity || "غير محدد"}</td><td>{money(p.sale_price)}</td><td>{money(p.supplier_cost)}</td><td>{p.is_active ? "نشط" : "موقوف"}</td></tr>)}</tbody></table></div></section>}
 
     {tab === "pilgrims" && <section className="panel"><div className="panel-head"><div><h3>تسجيل الحجاج</h3><p>بيانات الحاج الأساسية مستقلة عن الحجز ويمكن إعادة استخدامها مع خدمات أخرى.</p></div></div><form className="form-grid" onSubmit={savePilgrim}><label><span>الاسم الكامل</span><input value={pilgrimForm.full_name} onChange={e => setPilgrimForm({ ...pilgrimForm, full_name: e.target.value })} required /></label><label><span>رقم الجواز</span><input value={pilgrimForm.passport_number} onChange={e => setPilgrimForm({ ...pilgrimForm, passport_number: e.target.value })} /></label><label><span>الجنسية</span><input value={pilgrimForm.nationality} onChange={e => setPilgrimForm({ ...pilgrimForm, nationality: e.target.value })} /></label><label><span>الهاتف</span><input value={pilgrimForm.phone} onChange={e => setPilgrimForm({ ...pilgrimForm, phone: e.target.value })} /></label><div className="form-actions"><button className="primary">حفظ الحاج</button></div></form><div className="table-wrap" style={{ marginTop: 20 }}><table><thead><tr><th>الاسم</th><th>الجواز</th><th>الجنسية</th><th>الهاتف</th><th>الحالة</th></tr></thead><tbody>{pilgrims.map(p => <tr key={p.id}><td>{p.full_name}</td><td>{p.passport_number || "—"}</td><td>{p.nationality || "—"}</td><td>{p.phone || "—"}</td><td>{p.visa_status}</td></tr>)}</tbody></table></div></section>}
 
@@ -85,6 +108,6 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
 
     {tab === "collections" && <HajjCollectionPanel />}
 
-    {tab === "agents" && <section className="panel"><div className="panel-head"><div><h3>الوكلاء</h3><p>الوكيل طرف مالي مرتبط بحساب محاسبي. إنشاء الموردين والأطراف المحاسبية يتم من الدليل المحاسبي، ثم تستخدم هنا في الخدمات.</p></div></div><div className="table-wrap"><table><thead><tr><th>الوكيل</th><th>الرمز</th><th>الهاتف</th><th>الحساب</th><th>الحالة</th></tr></thead><tbody>{agents.map(a => <tr key={a.id}><td>{a.name}</td><td>{a.code || "—"}</td><td>{a.phone || "—"}</td><td>{accounts.find(x => x.id === a.account_id)?.code || a.account_id || "غير مربوط"}</td><td>{a.is_active ? "نشط" : "موقوف"}</td></tr>)}</tbody></table></div></section>}
+    {tab === "agents" && <><section className="panel"><div className="panel-head"><div><h3>إضافة وكيل</h3><p>الوكيل طرف مالي يجب ربطه بحساب أصول قبل استخدامه في خدمات الحج.</p></div></div><form className="form-grid" onSubmit={saveAgent}><label><span>اسم الوكيل</span><input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} required /></label><label><span>رمز الوكيل</span><input value={agentForm.code} onChange={e => setAgentForm({ ...agentForm, code: e.target.value })} /></label><label><span>الهاتف</span><input value={agentForm.phone} onChange={e => setAgentForm({ ...agentForm, phone: e.target.value })} /></label><label><span>حساب الوكيل</span><select value={agentForm.account_id} onChange={e => setAgentForm({ ...agentForm, account_id: e.target.value })} required><option value="">اختر الحساب...</option>{accounts.filter(a => a.account_type === "asset" && a.is_active).map(a => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</select></label><div className="form-actions"><button className="primary">حفظ الوكيل</button></div></form></section><section className="panel"><div className="panel-head"><div><h3>الوكلاء</h3><p>الوكيل طرف مالي مرتبط بحساب محاسبي ويمكن استخدامه في كل الخدمات.</p></div></div><div className="table-wrap"><table><thead><tr><th>الوكيل</th><th>الرمز</th><th>الهاتف</th><th>الحساب</th><th>الحالة</th></tr></thead><tbody>{agents.map(a => <tr key={a.id}><td>{a.name}</td><td>{a.code || "—"}</td><td>{a.phone || "—"}</td><td>{accounts.find(x => x.id === a.account_id)?.code || a.account_id || "غير مربوط"}</td><td>{a.is_active ? "نشط" : "موقوف"}</td></tr>)}</tbody></table></div></section></>}
   </main>;
 }
