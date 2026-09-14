@@ -12,7 +12,7 @@ from app.api.reports import router as reports_router
 from app.api.parties import router as parties_router
 from app.api.settings import router as settings_router
 from app.api.travel import router as travel_router
-from app.api.hajj import router as hajj_router
+from app.api.hajj import router as hajj_router, umrah_router
 from app.api.services import router as services_router
 from app.api.vouchers import router as vouchers_router
 from app.api.users import router as users_router
@@ -20,7 +20,7 @@ from app.core.config import settings
 
 app = FastAPI(
     title="Accounting System API",
-    version="0.9.0",
+    version="0.9.1",
     description="واجهة API لنظام محاسبي مستقل لوكالة الحج والعمرة والسفر",
 )
 
@@ -46,6 +46,7 @@ app.include_router(vouchers_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(hajj_router, prefix="/api/v1")
+app.include_router(umrah_router, prefix="/api/v1")
 app.include_router(services_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
