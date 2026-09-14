@@ -129,8 +129,7 @@ def list_hajj_bookings(db: Session = Depends(get_db), user: User = Depends(get_c
     stmt = select(ProgramBooking).join(TravelProgram, TravelProgram.id == ProgramBooking.program_id).where(TravelProgram.program_type == "hajj")
     if user.branch_id is not None:
         stmt = stmt.where((ProgramBooking.branch_id == user.branch_id) | ProgramBooking.branch_id.is_(None))
-    rows = list(db.scalars(stmt.order_by(ProgramBooking.id.desc())))
-    return rows
+    return list(db.scalars(stmt.order_by(ProgramBooking.id.desc())))
 
 
 @router.post("/bookings", status_code=201)
@@ -141,8 +140,9 @@ def create_hajj_booking(payload: HajjBookingCreate, db: Session = Depends(get_db
     _scope(user, program.branch_id)
 
     pilgrim = db.get(Pilgrim, payload.pilgrim_id)
-    if not pilgrim or not pilgrim.branch_id in (None, user.branch_id) if user.branch_id is not None else not pilgrim:
-        raise HTTPException(404, "الحاج غير موجود أو تابع لفرع آخر")
+    if not pilgrim:
+        raise HTTPException(404, "الحاج غير موجود")
+    _scope(user, pilgrim.branch_id)
 
     quota = db.scalar(select(HajjQuota).where(HajjQuota.id == payload.quota_id).with_for_update())
     if not quota:
@@ -164,9 +164,6 @@ def create_hajj_booking(payload: HajjBookingCreate, db: Session = Depends(get_db
         raise HTTPException(400, "لا يجتمع الوكيل والعميل المباشر في نفس حجز الحج")
 
     cost = payload.supplier_cost if payload.supplier_cost is not None else quota.unit_cost
-    if cost < 0:
-        raise HTTPException(400, "تكلفة المورد لا يمكن أن تكون سالبة")
-
     quota.used_units += 1
     booking = ProgramBooking(
         program_id=program.id,
