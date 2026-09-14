@@ -81,6 +81,7 @@ export const getTrialBalance=(p?:ReportParams)=>api<any>(`/reports/trial-balance
 export const getProfitLoss=(p?:ReportParams)=>api<any>(`/reports/profit-loss${queryParams(p)}`);
 export const getCashMovement=(p?:ReportParams)=>api<any>(`/reports/cash-movement${queryParams(p)}`);
 export const getPartyReport=(partyId:number,p?:ReportParams)=>api<any>(`/reports/party/${partyId}${queryParams(p)}`);
+export const getPartyServiceReport=(partyId:number,serviceType="all",p?:ReportParams)=>api<any>(`/reports/party/${partyId}/services?service_type=${encodeURIComponent(serviceType)}${p?.from_date?`&from_date=${encodeURIComponent(p.from_date)}`:""}${p?.to_date?`&to_date=${encodeURIComponent(p.to_date)}`:""}`);
 
 export const getVisaServices=()=>api<VisaService[]>("/travel/visas");
 export const createVisa=(payload:any)=>api<VisaService>("/travel/visas",{method:"POST",body:JSON.stringify(payload)});
