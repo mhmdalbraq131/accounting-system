@@ -20,6 +20,8 @@ class Voucher(Base):
     base_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
     source_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     destination_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    linked_service_type: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    linked_service_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True, unique=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
