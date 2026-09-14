@@ -155,7 +155,7 @@ def post_hajj_booking(booking_id: int, db: Session = Depends(get_db), user: User
     booking = db.get(ProgramBooking, booking_id)
     if not booking: raise HTTPException(404, "حجز الحج غير موجود")
     _scope(user, booking.branch_id)
-    if booking.status != "reserved" or booking.journal_entry_id: raise HTTPException(400, "الحجز غير قابل للترحيل")
+    if booking.status not in {"reserved", "confirmed"} or booking.journal_entry_id: raise HTTPException(400, "الحجز غير قابل للترحيل")
     program = db.get(TravelProgram, booking.program_id)
     if not program or program.program_type != "hajj": raise HTTPException(400, "الحجز ليس من حج")
     counterparty = _party(db, user, booking.agent_id or booking.customer_id, {"agent"} if booking.agent_id else {"customer", "both"}, "الطرف", "asset")
@@ -169,7 +169,7 @@ def post_hajj_booking(booking_id: int, db: Session = Depends(get_db), user: User
                       {"account_id": supplier.account_id, "debit": Decimal("0"), "credit": booking.supplier_cost, "description": f"مستحق مورد الحج للحجز #{booking.id}"}])
     entry = create_journal(db, entry_number=f"HAJJ-BOOK-{booking.id}", entry_date=booking.booked_at.date(),
                            description=f"ترحيل خدمة حج للحجز #{booking.id}", lines=lines, created_by=user.id, branch_id=booking.branch_id, status="posted")
-    booking.journal_entry_id = entry.id; booking.status = "confirmed"; db.commit(); db.refresh(booking); return booking
+    booking.journal_entry_id = entry.id; booking.status = "posted"; db.commit(); db.refresh(booking); return booking
 
 @router.post("/bookings/{booking_id}/cancel")
 def cancel_hajj_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -194,8 +194,8 @@ def cancel_hajj_booking(booking_id: int, db: Session = Depends(get_db), user: Us
 @router.get("/agents/{agent_id}/balance")
 def agent_balance(agent_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     agent = _party(db, user, agent_id, {"agent"}, "الوكيل", "asset")
-    debit = db.scalar(select(func.coalesce(func.sum(ProgramBooking.sale_price), 0)).where(ProgramBooking.agent_id == agent.id, ProgramBooking.status == "confirmed")) or Decimal("0")
-    paid = db.scalar(select(func.coalesce(func.sum(ProgramBooking.paid_amount), 0)).where(ProgramBooking.agent_id == agent.id, ProgramBooking.status == "confirmed")) or Decimal("0")
+    debit = db.scalar(select(func.coalesce(func.sum(ProgramBooking.sale_price), 0)).where(ProgramBooking.agent_id == agent.id, ProgramBooking.status.in_(["confirmed", "posted"]))) or Decimal("0")
+    paid = db.scalar(select(func.coalesce(func.sum(ProgramBooking.paid_amount), 0)).where(ProgramBooking.agent_id == agent.id, ProgramBooking.status.in_(["confirmed", "posted"]))) or Decimal("0")
     return {"agent_id": agent.id, "agent_name": agent.name, "debit": debit, "paid": paid, "remaining": debit - paid}
 
 @umrah_router.get("/bookings")
@@ -213,44 +213,15 @@ def create_umrah_booking(payload: UmrahBookingCreate, db: Session = Depends(get_
     if not pilgrim: raise HTTPException(404, "المعتمر غير موجود")
     _scope(user, pilgrim.branch_id)
     booked = db.scalar(select(func.count(ProgramBooking.id)).where(ProgramBooking.program_id == program.id, ProgramBooking.status == "confirmed")) or 0
-    if program.capacity and booked >= program.capacity: raise HTTPException(409, "لا توجد مقاعد متاحة في برنامج العمرة")
-    return _create_service_booking(db, user, program=program, pilgrim=pilgrim, agent_id=payload.agent_id, customer_id=payload.customer_id,
-                                   supplier_id=payload.supplier_id, sale_price=payload.sale_price, supplier_cost=payload.supplier_cost)
-
-@umrah_router.post("/bookings/{booking_id}/post")
-def post_umrah_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    booking = db.get(ProgramBooking, booking_id)
-    if not booking: raise HTTPException(404, "حجز العمرة غير موجود")
-    _scope(user, booking.branch_id)
-    if booking.status != "reserved" or booking.journal_entry_id: raise HTTPException(400, "الحجز غير قابل للترحيل")
-    program = db.get(TravelProgram, booking.program_id)
-    if not program or program.program_type != "umrah": raise HTTPException(400, "الحجز ليس من عمرة")
-    counterparty = _party(db, user, booking.agent_id or booking.customer_id, {"agent"} if booking.agent_id else {"customer", "both"}, "الطرف", "asset")
-    supplier = _party(db, user, booking.supplier_id, {"supplier", "both"}, "مورد العمرة", "liability")
-    revenue = _setting_account(db, user, "travel_revenue_account_id", "revenue", "إيراد الحج والعمرة")
-    lines = [{"account_id": counterparty.account_id, "debit": booking.sale_price, "credit": Decimal("0"), "description": f"استحقاق خدمة عمرة #{booking.id}"},
-             {"account_id": revenue.id, "debit": Decimal("0"), "credit": booking.sale_price, "description": f"إيراد العمرة للحجز #{booking.id}"}]
-    if booking.supplier_cost > 0:
-        cost_account = _setting_account(db, user, "travel_cost_account_id", "expense", "تكلفة الحج والعمرة")
-        lines.extend([{ "account_id": cost_account.id, "debit": booking.supplier_cost, "credit": Decimal("0"), "description": f"تكلفة عمرة #{booking.id}"},
-                      {"account_id": supplier.account_id, "debit": Decimal("0"), "credit": booking.supplier_cost, "description": f"مستحق مورد العمرة #{booking.id}"}])
-    entry = create_journal(db, entry_number=f"UMRAH-BOOK-{booking.id}", entry_date=booking.booked_at.date(),
-                           description=f"ترحيل خدمة عمرة للحجز #{booking.id}", lines=lines, created_by=user.id, branch_id=booking.branch_id, status="posted")
-    booking.journal_entry_id = entry.id; booking.status = "confirmed"; db.commit(); db.refresh(booking); return booking
-
-@umrah_router.post("/bookings/{booking_id}/cancel")
-def cancel_umrah_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    booking = db.get(ProgramBooking, booking_id)
-    if not booking: raise HTTPException(404, "حجز العمرة غير موجود")
-    _scope(user, booking.branch_id)
-    if booking.status == "cancelled": raise HTTPException(400, "الحجز ملغى مسبقًا")
-    if booking.journal_entry_id:
-        original = db.get(__import__("app.models.journal", fromlist=["JournalEntry"]).JournalEntry, booking.journal_entry_id)
-        if not original: raise HTTPException(409, "القيد المرتبط بالحجز غير موجود")
-        try:
-            create_journal(db, entry_number=f"REV-UMRAH-BOOK-{booking.id}", entry_date=date.today(), description=f"عكس حجز العمرة #{booking.id}",
-                           lines=[{"account_id": l.account_id, "debit": l.credit, "credit": l.debit} for l in original.lines],
-                           created_by=user.id, branch_id=booking.branch_id, status="posted")
-        except ValueError as exc:
-            db.rollback(); raise HTTPException(400, str(exc))
-    booking.status = "cancelled"; db.commit(); db.refresh(booking); return booking
+    if program.capacity and booked >= program.capacity: raise HTTPException(409, "اكتملت سعة البرنامج")
+    _party(db, user, payload.supplier_id, {"supplier", "both"}, "المورد", "liability")
+    if payload.agent_id is not None:
+        _party(db, user, payload.agent_id, {"agent"}, "الوكيل", "asset")
+    else:
+        _party(db, user, payload.customer_id, {"customer", "both"}, "العميل", "asset")
+    if payload.agent_id is not None and payload.customer_id is not None: raise HTTPException(400, "لا يجتمع الوكيل والعميل المباشر في نفس الخدمة")
+    if payload.agent_id is None and payload.customer_id is None: raise HTTPException(400, "يجب تحديد الوكيل أو العميل المباشر")
+    booking = ProgramBooking(program_id=program.id, pilgrim_id=pilgrim.id, customer_id=payload.customer_id, agent_id=payload.agent_id, supplier_id=payload.supplier_id,
+                             sale_price=payload.sale_price, supplier_cost=payload.supplier_cost, paid_amount=Decimal("0"), remaining_amount=payload.sale_price,
+                             profit=payload.sale_price-payload.supplier_cost, customer_type="agency" if payload.agent_id else "direct", status="reserved", branch_id=user.branch_id)
+    db.add(booking); db.commit(); db.refresh(booking); return booking
