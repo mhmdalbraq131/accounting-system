@@ -8,13 +8,14 @@ from app.models.role import Permission, Role, RolePermission, UserRole
 from app.models.settings import SystemSetting
 from app.models.travel import Pilgrim, ProgramBooking, TravelProgram, VisaService
 from app.models.hajj import HajjQuota
+from app.models.service_order import ServiceOrder
 from app.models.user import User
 from app.models.voucher import Voucher
 
 __all__ = [
     "Account", "Branch", "Expense", "FinancialAccount", "JournalEntry", "JournalLine", "Party",
     "Permission", "Role", "RolePermission", "UserRole", "User", "Voucher", "SystemSetting",
-    "TravelProgram", "Pilgrim", "ProgramBooking", "VisaService", "HajjQuota",
+    "TravelProgram", "Pilgrim", "ProgramBooking", "VisaService", "HajjQuota", "ServiceOrder",
 ]
 
 from app.models.currency import Currency
