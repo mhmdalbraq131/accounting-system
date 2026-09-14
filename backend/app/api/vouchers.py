@@ -17,6 +17,8 @@ from app.models.settings import SystemSetting
 
 router = APIRouter(prefix="/vouchers", tags=["السندات"])
 
+VALID_LINK_TYPES = {"hajj_booking", "umrah_booking", "flight", "bus", "visit", "work_visa", "visa_service"}
+
 
 class VoucherCreate(BaseModel):
     voucher_number: str | None = None
@@ -28,6 +30,8 @@ class VoucherCreate(BaseModel):
     destination_account_id: int
     currency_id: int | None = None
     exchange_rate: Decimal | None = None
+    linked_service_type: str | None = None
+    linked_service_id: int | None = None
 
 
 class VoucherOut(VoucherCreate):
@@ -44,24 +48,11 @@ def _setting_value(db: Session, key: str, default: str) -> str:
 
 
 def _next_voucher_number(db: Session, voucher_type: str, voucher_date: date) -> str:
-    prefix_defaults = {
-        "receipt": "RV",
-        "payment": "PV",
-        "transfer": "TV",
-    }
-    key_map = {
-        "receipt": "voucher_prefix_receipt",
-        "payment": "voucher_prefix_payment",
-        "transfer": "voucher_prefix_transfer",
-    }
+    prefix_defaults = {"receipt": "RV", "payment": "PV", "transfer": "TV"}
+    key_map = {"receipt": "voucher_prefix_receipt", "payment": "voucher_prefix_payment", "transfer": "voucher_prefix_transfer"}
     prefix = _setting_value(db, key_map[voucher_type], prefix_defaults[voucher_type]).strip() or prefix_defaults[voucher_type]
     base = f"{prefix}-{voucher_date:%Y}-"
-    rows = db.scalars(
-        select(Voucher.voucher_number)
-        .where(Voucher.voucher_number.like(f"{base}%"))
-        .order_by(Voucher.id.desc())
-        .limit(1000)
-    ).all()
+    rows = db.scalars(select(Voucher.voucher_number).where(Voucher.voucher_number.like(f"{base}%")).order_by(Voucher.id.desc()).limit(1000)).all()
     used = set()
     for value in rows:
         try:
@@ -86,6 +77,10 @@ def _validate_account_branch(db: Session, account_id: int, user: User) -> None:
 def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if payload.voucher_type not in {"receipt", "payment", "transfer"}:
         raise HTTPException(status_code=400, detail="نوع السند غير مدعوم")
+    if payload.linked_service_type is not None and payload.linked_service_type not in VALID_LINK_TYPES:
+        raise HTTPException(status_code=400, detail="نوع الخدمة المرتبطة غير مدعوم")
+    if payload.linked_service_type and payload.linked_service_id is None:
+        raise HTTPException(status_code=400, detail="يجب تحديد رقم الخدمة المرتبطة")
     _validate_account_branch(db, payload.source_account_id, user)
     _validate_account_branch(db, payload.destination_account_id, user)
     voucher_number = (payload.voucher_number or "").strip() or _next_voucher_number(db, payload.voucher_type, payload.voucher_date)
@@ -102,8 +97,10 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
             currency_id=payload.currency_id,
             exchange_rate=payload.exchange_rate,
             created_by=user.id,
+            branch_id=user.branch_id,
+            linked_service_type=payload.linked_service_type,
+            linked_service_id=payload.linked_service_id,
         )
-        voucher.branch_id = user.branch_id
         db.commit()
         db.refresh(voucher)
         return voucher
