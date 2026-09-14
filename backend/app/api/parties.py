@@ -10,7 +10,9 @@ from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.user import User
 
-router = APIRouter(prefix="/parties", tags=["العملاء والموردون"])
+router = APIRouter(prefix="/parties", tags=["الأطراف والعملاء والموردون والوكلاء"])
+
+ALLOWED_TYPES = {"customer", "supplier", "both", "agent"}
 
 
 class PartyCreate(BaseModel):
@@ -56,8 +58,8 @@ def list_parties(
     if user.branch_id is not None:
         query = query.where((Party.branch_id == user.branch_id) | Party.branch_id.is_(None))
     if party_type:
-        if party_type not in {"customer", "supplier", "both"}:
-            raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
+        if party_type not in ALLOWED_TYPES:
+            raise HTTPException(400, "نوع الطرف غير مدعوم")
         query = query.where(Party.party_type == party_type)
     if not include_inactive:
         query = query.where(Party.is_active.is_(True))
@@ -70,8 +72,8 @@ def create_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if payload.party_type not in {"customer", "supplier", "both"}:
-        raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
+    if payload.party_type not in ALLOWED_TYPES:
+        raise HTTPException(400, "نوع الطرف غير مدعوم")
     data = payload.model_dump()
     account_id = data.pop("account_id", None)
     _validate_account(db, account_id, user)
@@ -93,8 +95,8 @@ def update_party(
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
-    if payload.party_type not in {"customer", "supplier", "both"}:
-        raise HTTPException(400, "نوع الطرف يجب أن يكون customer أو supplier أو both")
+    if payload.party_type not in ALLOWED_TYPES:
+        raise HTTPException(400, "نوع الطرف غير مدعوم")
     _validate_account(db, payload.account_id, user)
     for key, value in payload.model_dump().items():
         setattr(party, key, value)
