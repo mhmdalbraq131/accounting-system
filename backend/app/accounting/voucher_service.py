@@ -11,203 +11,147 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry
 from app.models.party import Party
+from app.models.service_order import ServiceOrder
 from app.models.travel import ProgramBooking
 from app.models.voucher import Voucher
 
 VALID_TYPES = {"receipt", "payment", "transfer"}
+PAYMENT_LINK_TYPES = {"hajj_booking", "umrah_booking", "service_order"}
 
 
 def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> FinancialAccount | None:
-    return db.scalar(
-        select(FinancialAccount).where(
-            FinancialAccount.ledger_account_id == ledger_account_id,
-            FinancialAccount.active.is_(True),
-        )
-    )
+    return db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == ledger_account_id, FinancialAccount.active.is_(True)))
 
 
-def create_voucher(
-    db: Session,
-    *,
-    voucher_number: str,
-    voucher_type: str,
-    voucher_date: date,
-    amount: Decimal,
-    description: str,
-    source_account_id: int | None,
-    destination_account_id: int | None,
-    currency_id: int | None = None,
-    exchange_rate: Decimal | None = None,
-    created_by: int | None = None,
-    branch_id: int | None = None,
-    linked_service_type: str | None = None,
-    linked_service_id: int | None = None,
-) -> Voucher:
-    voucher_number = voucher_number.strip()
-    description = description.strip()
-    if not voucher_number:
-        raise ValueError("رقم السند مطلوب")
-    if not description:
-        raise ValueError("بيان السند مطلوب")
-    if voucher_type not in VALID_TYPES:
-        raise ValueError("نوع السند غير مدعوم")
+def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date, amount: Decimal,
+                   description: str, source_account_id: int | None, destination_account_id: int | None,
+                   currency_id: int | None = None, exchange_rate: Decimal | None = None,
+                   created_by: int | None = None, branch_id: int | None = None,
+                   linked_service_type: str | None = None, linked_service_id: int | None = None) -> Voucher:
+    voucher_number = voucher_number.strip(); description = description.strip()
+    if not voucher_number: raise ValueError("رقم السند مطلوب")
+    if not description: raise ValueError("بيان السند مطلوب")
+    if voucher_type not in VALID_TYPES: raise ValueError("نوع السند غير مدعوم")
     amount = Decimal(str(amount))
-    if amount <= 0:
-        raise ValueError("مبلغ السند يجب أن يكون أكبر من صفر")
-    if not source_account_id or not destination_account_id:
-        raise ValueError("يجب تحديد حساب المصدر وحساب الوجهة")
-    if source_account_id == destination_account_id:
-        raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
-    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first():
-        raise ValueError("رقم السند مستخدم مسبقًا")
+    if amount <= 0: raise ValueError("مبلغ السند يجب أن يكون أكبر من صفر")
+    if not source_account_id or not destination_account_id: raise ValueError("يجب تحديد حساب المصدر وحساب الوجهة")
+    if source_account_id == destination_account_id: raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
+    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first(): raise ValueError("رقم السند مستخدم مسبقًا")
 
-    source = db.get(Account, source_account_id)
-    destination = db.get(Account, destination_account_id)
-    if not source or not source.is_active or not destination or not destination.is_active:
-        raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
-
-    source_financial = _financial_account_for_ledger(db, source_account_id)
-    destination_financial = _financial_account_for_ledger(db, destination_account_id)
-
+    source = db.get(Account, source_account_id); destination = db.get(Account, destination_account_id)
+    if not source or not source.is_active or not destination or not destination.is_active: raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
+    source_financial = _financial_account_for_ledger(db, source_account_id); destination_financial = _financial_account_for_ledger(db, destination_account_id)
     if voucher_type == "transfer":
-        if not source_financial or not destination_financial:
-            raise ValueError("سند التحويل يجب أن يكون بين صندوق أو بنك أو محفظة")
+        if not source_financial or not destination_financial: raise ValueError("سند التحويل يجب أن يكون بين صندوق أو بنك أو محفظة")
     elif voucher_type == "receipt":
-        if not destination_financial:
-            raise ValueError("سند القبض يجب أن يكون حساب الاستلام صندوقًا أو بنكًا أو محفظة")
+        if not destination_financial: raise ValueError("سند القبض يجب أن يكون حساب الاستلام صندوقًا أو بنكًا أو محفظة")
     elif voucher_type == "payment":
-        if not source_financial:
-            raise ValueError("سند الصرف يجب أن يكون حساب الدفع صندوقًا أو بنكًا أو محفظة")
+        if not source_financial: raise ValueError("سند الصرف يجب أن يكون حساب الدفع صندوقًا أو بنكًا أو محفظة")
 
     if currency_id is not None:
         currency = db.get(Currency, currency_id)
-        if not currency or not currency.is_active:
-            raise ValueError("العملة غير موجودة أو غير نشطة")
-        if currency.is_base:
-            exchange_rate = Decimal("1")
+        if not currency or not currency.is_active: raise ValueError("العملة غير موجودة أو غير نشطة")
+        if currency.is_base: exchange_rate = Decimal("1")
         elif exchange_rate is None:
-            rate = db.query(ExchangeRate).filter(
-                ExchangeRate.currency_id == currency_id
-            ).order_by(ExchangeRate.effective_at.desc()).first()
-            if not rate:
-                raise ValueError("يجب تحديد سعر صرف للعملة")
+            rate = db.query(ExchangeRate).filter(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()).first()
+            if not rate: raise ValueError("يجب تحديد سعر صرف للعملة")
             exchange_rate = rate.rate_to_base
-        if Decimal(str(exchange_rate)) <= 0:
-            raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
+        if Decimal(str(exchange_rate)) <= 0: raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
 
     base_amount = amount * Decimal(str(exchange_rate)) if exchange_rate is not None else amount
-    voucher = Voucher(
-        voucher_number=voucher_number,
-        voucher_type=voucher_type,
-        voucher_date=voucher_date,
-        description=description,
-        amount=amount,
-        source_account_id=source_account_id,
-        destination_account_id=destination_account_id,
-        created_by=created_by,
-        branch_id=branch_id,
-        linked_service_type=linked_service_type,
-        linked_service_id=linked_service_id,
-        status="draft",
-        created_at=datetime.utcnow(),
-        currency_id=currency_id,
-        exchange_rate=exchange_rate,
-        base_amount=base_amount,
-    )
-    db.add(voucher)
-    db.flush()
-    return voucher
+    voucher = Voucher(voucher_number=voucher_number, voucher_type=voucher_type, voucher_date=voucher_date, description=description,
+                      amount=amount, source_account_id=source_account_id, destination_account_id=destination_account_id,
+                      created_by=created_by, branch_id=branch_id, linked_service_type=linked_service_type,
+                      linked_service_id=linked_service_id, status="draft", created_at=datetime.utcnow(),
+                      currency_id=currency_id, exchange_rate=exchange_rate, base_amount=base_amount)
+    db.add(voucher); db.flush(); return voucher
 
 
 def _journal_lines(voucher: Voucher) -> list[dict]:
     posted_amount = voucher.base_amount or voucher.amount
-    return [
-        {"account_id": voucher.destination_account_id, "debit": posted_amount},
-        {"account_id": voucher.source_account_id, "credit": posted_amount},
-    ]
+    return [{"account_id": voucher.destination_account_id, "debit": posted_amount}, {"account_id": voucher.source_account_id, "credit": posted_amount}]
+
+
+def _linked_booking(voucher: Voucher) -> ProgramBooking | None:
+    if voucher.linked_service_type in {"hajj_booking", "umrah_booking"} and voucher.linked_service_id is not None:
+        return voucher._db_session.get(ProgramBooking, voucher.linked_service_id) if hasattr(voucher, "_db_session") else None
+    return None
+
+
+def _get_linked(db: Session, voucher: Voucher):
+    if not voucher.linked_service_type or voucher.linked_service_id is None:
+        return None
+    if voucher.linked_service_type in {"hajj_booking", "umrah_booking"}:
+        booking = db.get(ProgramBooking, voucher.linked_service_id)
+        if not booking: raise ValueError("الخدمة المرتبطة بسند القبض غير موجودة")
+        if voucher.linked_service_type == "hajj_booking":
+            program_type = db.scalar(select(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.program_type).where(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.id == booking.program_id))
+            if program_type != "hajj": raise ValueError("نوع الخدمة لا يطابق حجز الحج")
+        else:
+            program_type = db.scalar(select(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.program_type).where(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.id == booking.program_id))
+            if program_type != "umrah": raise ValueError("نوع الخدمة لا يطابق حجز العمرة")
+        return booking
+    if voucher.linked_service_type == "service_order":
+        row = db.get(ServiceOrder, voucher.linked_service_id)
+        if not row: raise ValueError("الخدمة المرتبطة بالسند غير موجودة")
+        return row
+    return None
 
 
 def _apply_service_receipt(db: Session, voucher: Voucher, amount: Decimal, reverse: bool = False) -> None:
-    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None or voucher.voucher_type != "receipt":
+    if voucher.voucher_type != "receipt" or voucher.linked_service_type not in PAYMENT_LINK_TYPES:
         return
-    booking = db.get(ProgramBooking, voucher.linked_service_id)
-    if not booking:
-        raise ValueError("الحجز المرتبط بسند القبض غير موجود")
+    row = _get_linked(db, voucher)
+    if row is None: return
     delta = -amount if reverse else amount
-    new_paid = Decimal(str(booking.paid_amount or 0)) + delta
-    if new_paid < 0:
-        raise ValueError("لا يمكن عكس السند لأن المدفوع سيصبح سالبًا")
-    if new_paid > Decimal(str(booking.sale_price)):
-        raise ValueError("مبلغ السند يتجاوز المتبقي على خدمة الحج")
-    booking.paid_amount = new_paid
-    booking.remaining_amount = Decimal(str(booking.sale_price)) - new_paid
+    new_paid = Decimal(str(row.paid_amount or 0)) + delta
+    sale = Decimal(str(row.sale_price))
+    if new_paid < 0: raise ValueError("لا يمكن عكس السند لأن المدفوع سيصبح سالبًا")
+    if new_paid > sale: raise ValueError("مبلغ سند القبض يتجاوز المتبقي على الخدمة")
+    row.paid_amount = new_paid
+    row.remaining_amount = sale - new_paid
 
 
-def _validate_linked_hajj_receipt(db: Session, voucher: Voucher) -> None:
-    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None:
+def _validate_linked_receipt(db: Session, voucher: Voucher) -> None:
+    if not voucher.linked_service_type or voucher.linked_service_id is None:
         return
-    booking = db.get(ProgramBooking, voucher.linked_service_id)
-    if not booking:
-        raise ValueError("خدمة الحج المرتبطة بالسند غير موجودة")
+    if voucher.linked_service_type not in PAYMENT_LINK_TYPES:
+        raise ValueError("نوع الخدمة المرتبطة غير مدعوم")
     if voucher.voucher_type != "receipt":
-        return
-    if booking.journal_entry_id is None:
-        raise ValueError("يجب ترحيل خدمة الحج قبل تسجيل التحصيل عليها")
-    party_id = booking.agent_id or booking.customer_id
+        raise ValueError("ربط الخدمة مدعوم حاليًا مع سندات القبض فقط")
+    row = _get_linked(db, voucher)
+    if getattr(row, "journal_entry_id", None) is None:
+        raise ValueError("يجب ترحيل الخدمة قبل تسجيل التحصيل عليها")
+    party_id = getattr(row, "agent_id", None) or getattr(row, "customer_id", None)
     party = db.get(Party, party_id) if party_id else None
-    if not party or party.account_id is None:
-        raise ValueError("الطرف المالي للحجز غير مربوط بحساب محاسبي")
-    if voucher.source_account_id != party.account_id:
-        raise ValueError("حساب مصدر سند القبض يجب أن يكون حساب الوكيل أو العميل المرتبط بالحجز")
+    if not party or party.account_id is None: raise ValueError("الطرف المالي للخدمة غير مربوط بحساب محاسبي")
+    if voucher.source_account_id != party.account_id: raise ValueError("حساب مصدر السند يجب أن يكون حساب الوكيل أو العميل المرتبط بالخدمة")
+    if voucher.branch_id is not None and getattr(row, "branch_id", None) not in (None, voucher.branch_id):
+        raise ValueError("الخدمة المرتبطة تابعة لفرع آخر")
+    amount = voucher.base_amount or voucher.amount
+    if amount > Decimal(str(row.remaining_amount or 0)):
+        raise ValueError("مبلغ التحصيل يتجاوز المتبقي على الخدمة")
 
 
 def post_voucher(db: Session, voucher: Voucher) -> Voucher:
-    if voucher.status != "draft":
-        raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
-    _validate_linked_hajj_receipt(db, voucher)
-
-    entry = create_journal(
-        db,
-        entry_number=f"JV-{voucher.voucher_number}",
-        entry_date=voucher.voucher_date,
-        description=voucher.description,
-        lines=_journal_lines(voucher),
-        created_by=voucher.created_by,
-        branch_id=voucher.branch_id,
-        status="posted",
-    )
-    entry.posted_at = datetime.utcnow()
-    voucher.journal_entry_id = entry.id
-    voucher.status = "posted"
-    voucher.posted_at = datetime.utcnow()
+    if voucher.status != "draft": raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
+    _validate_linked_receipt(db, voucher)
+    entry = create_journal(db, entry_number=f"JV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
+                           description=voucher.description, lines=_journal_lines(voucher), created_by=voucher.created_by,
+                           branch_id=voucher.branch_id, status="posted")
+    entry.posted_at = datetime.utcnow(); voucher.journal_entry_id = entry.id; voucher.status = "posted"; voucher.posted_at = datetime.utcnow()
     _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount)
-    db.flush()
-    return voucher
+    db.flush(); return voucher
 
 
 def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
-    if voucher.status != "posted" or not voucher.journal_entry_id:
-        raise ValueError("لا يمكن إلغاء سند غير مرحّل")
+    if voucher.status != "posted" or not voucher.journal_entry_id: raise ValueError("لا يمكن إلغاء سند غير مرحّل")
     original = db.get(JournalEntry, voucher.journal_entry_id)
-    if not original:
-        raise ValueError("القيد المرتبط بالسند غير موجود")
-    lines = [
-        {"account_id": line.account_id, "debit": line.credit, "credit": line.debit}
-        for line in original.lines
-    ]
-    reversal = create_journal(
-        db,
-        entry_number=f"REV-{voucher.voucher_number}",
-        entry_date=voucher.voucher_date,
-        description=f"عكس السند {voucher.voucher_number}: {voucher.description}",
-        lines=lines,
-        created_by=voucher.created_by,
-        branch_id=voucher.branch_id,
-        status="posted",
-    )
+    if not original: raise ValueError("القيد المرتبط بالسند غير موجود")
+    lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines]
+    reversal = create_journal(db, entry_number=f"REV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
+                              description=f"عكس السند {voucher.voucher_number}: {voucher.description}", lines=lines,
+                              created_by=voucher.created_by, branch_id=voucher.branch_id, status="posted")
     reversal.posted_at = datetime.utcnow()
     _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount, reverse=True)
-    voucher.status = "cancelled"
-    voucher.posted_at = datetime.utcnow()
-    db.flush()
-    return voucher
+    voucher.status = "cancelled"; voucher.posted_at = datetime.utcnow(); db.flush(); return voucher
