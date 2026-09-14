@@ -10,6 +10,7 @@ from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry
+from app.models.party import Party
 from app.models.travel import ProgramBooking
 from app.models.voucher import Voucher
 
@@ -127,13 +128,11 @@ def _journal_lines(voucher: Voucher) -> list[dict]:
 
 
 def _apply_service_receipt(db: Session, voucher: Voucher, amount: Decimal, reverse: bool = False) -> None:
-    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None:
+    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None or voucher.voucher_type != "receipt":
         return
     booking = db.get(ProgramBooking, voucher.linked_service_id)
     if not booking:
         raise ValueError("الحجز المرتبط بسند القبض غير موجود")
-    if voucher.voucher_type != "receipt":
-        return
     delta = -amount if reverse else amount
     new_paid = Decimal(str(booking.paid_amount or 0)) + delta
     if new_paid < 0:
@@ -144,19 +143,28 @@ def _apply_service_receipt(db: Session, voucher: Voucher, amount: Decimal, rever
     booking.remaining_amount = Decimal(str(booking.sale_price)) - new_paid
 
 
+def _validate_linked_hajj_receipt(db: Session, voucher: Voucher) -> None:
+    if voucher.linked_service_type != "hajj_booking" or voucher.linked_service_id is None:
+        return
+    booking = db.get(ProgramBooking, voucher.linked_service_id)
+    if not booking:
+        raise ValueError("خدمة الحج المرتبطة بالسند غير موجودة")
+    if voucher.voucher_type != "receipt":
+        return
+    if booking.journal_entry_id is None:
+        raise ValueError("يجب ترحيل خدمة الحج قبل تسجيل التحصيل عليها")
+    party_id = booking.agent_id or booking.customer_id
+    party = db.get(Party, party_id) if party_id else None
+    if not party or party.account_id is None:
+        raise ValueError("الطرف المالي للحجز غير مربوط بحساب محاسبي")
+    if voucher.source_account_id != party.account_id:
+        raise ValueError("حساب مصدر سند القبض يجب أن يكون حساب الوكيل أو العميل المرتبط بالحجز")
+
+
 def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     if voucher.status != "draft":
         raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
-
-    if voucher.linked_service_type == "hajj_booking" and voucher.linked_service_id is not None:
-        booking = db.get(ProgramBooking, voucher.linked_service_id)
-        if not booking:
-            raise ValueError("خدمة الحج المرتبطة بالسند غير موجودة")
-        if voucher.voucher_type == "receipt":
-            expected_account_id = booking.agent_id and db.get(Account, db.get(__import__('app.models.party', fromlist=['Party']).Party, booking.agent_id).account_id).id if False else None
-            # The booking service relation is verified by the linked party through the normal journal.
-            if booking.journal_entry_id is None:
-                raise ValueError("يجب ترحيل خدمة الحج قبل تسجيل التحصيل عليها")
+    _validate_linked_hajj_receipt(db, voucher)
 
     entry = create_journal(
         db,
