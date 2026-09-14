@@ -225,3 +225,41 @@ def create_umrah_booking(payload: UmrahBookingCreate, db: Session = Depends(get_
                              sale_price=payload.sale_price, supplier_cost=payload.supplier_cost, paid_amount=Decimal("0"), remaining_amount=payload.sale_price,
                              profit=payload.sale_price-payload.supplier_cost, customer_type="agency" if payload.agent_id else "direct", status="reserved", branch_id=user.branch_id)
     db.add(booking); db.commit(); db.refresh(booking); return booking
+
+@umrah_router.post("/bookings/{booking_id}/post")
+def post_umrah_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    booking = db.get(ProgramBooking, booking_id)
+    if not booking: raise HTTPException(404, "حجز العمرة غير موجود")
+    _scope(user, booking.branch_id)
+    if booking.status != "reserved" or booking.journal_entry_id: raise HTTPException(400, "الحجز غير قابل للترحيل")
+    program = db.get(TravelProgram, booking.program_id)
+    if not program or program.program_type != "umrah": raise HTTPException(400, "الحجز ليس من عمرة")
+    counterparty = _party(db, user, booking.agent_id or booking.customer_id, {"agent"} if booking.agent_id else {"customer", "both"}, "الطرف", "asset")
+    supplier = _party(db, user, booking.supplier_id, {"supplier", "both"}, "مورد العمرة", "liability")
+    revenue = _setting_account(db, user, "travel_revenue_account_id", "revenue", "إيراد الحج والعمرة")
+    lines = [{"account_id": counterparty.account_id, "debit": booking.sale_price, "credit": Decimal("0"), "description": f"استحقاق خدمة عمرة #{booking.id}"},
+             {"account_id": revenue.id, "debit": Decimal("0"), "credit": booking.sale_price, "description": f"إيراد العمرة للحجز #{booking.id}"}]
+    if booking.supplier_cost > 0:
+        cost_account = _setting_account(db, user, "travel_cost_account_id", "expense", "تكلفة الحج والعمرة")
+        lines.extend([{ "account_id": cost_account.id, "debit": booking.supplier_cost, "credit": Decimal("0"), "description": f"تكلفة عمرة #{booking.id}"},
+                      {"account_id": supplier.account_id, "debit": Decimal("0"), "credit": booking.supplier_cost, "description": f"مستحق مورد العمرة #{booking.id}"}])
+    entry = create_journal(db, entry_number=f"UMRAH-BOOK-{booking.id}", entry_date=booking.booked_at.date(),
+                           description=f"ترحيل خدمة عمرة للحجز #{booking.id}", lines=lines, created_by=user.id, branch_id=booking.branch_id, status="posted")
+    booking.journal_entry_id = entry.id; booking.status = "posted"; db.commit(); db.refresh(booking); return booking
+
+@umrah_router.post("/bookings/{booking_id}/cancel")
+def cancel_umrah_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    booking = db.get(ProgramBooking, booking_id)
+    if not booking: raise HTTPException(404, "حجز العمرة غير موجود")
+    _scope(user, booking.branch_id)
+    if booking.status == "cancelled": raise HTTPException(400, "الحجز ملغى مسبقًا")
+    if booking.journal_entry_id:
+        original = db.get(__import__("app.models.journal", fromlist=["JournalEntry"]).JournalEntry, booking.journal_entry_id)
+        if not original: raise HTTPException(409, "القيد المرتبط بالحجز غير موجود")
+        try:
+            create_journal(db, entry_number=f"REV-UMRAH-BOOK-{booking.id}", entry_date=date.today(), description=f"عكس حجز العمرة #{booking.id}",
+                           lines=[{"account_id": l.account_id, "debit": l.credit, "credit": l.debit} for l in original.lines],
+                           created_by=user.id, branch_id=booking.branch_id, status="posted")
+        except ValueError as exc:
+            db.rollback(); raise HTTPException(400, str(exc))
+    booking.status = "cancelled"; db.commit(); db.refresh(booking); return booking
