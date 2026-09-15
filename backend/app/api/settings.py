@@ -3,9 +3,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
-from app.models.role import Role, UserRole
 from app.models.settings import SystemSetting
 from app.models.user import User
 
@@ -53,19 +52,9 @@ class SettingOut(BaseModel):
     is_editable: bool
 
 
-def require_admin(user: User, db: Session) -> None:
-    is_admin = db.scalar(
-        select(Role.id)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(UserRole.user_id == user.id, Role.name.in_(["admin", "administrator", "مدير النظام"]))
-    )
-    if not is_admin:
-        raise HTTPException(status_code=403, detail="صلاحية مدير النظام مطلوبة")
-
-
 @router.get("", response_model=list[SettingOut])
 def list_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_admin(user, db)
+    require_permission(user, "settings.manage", db)
     existing = {s.key: s for s in db.scalars(select(SystemSetting)).all()}
     changed = False
     for key, value, value_type, category, description in DEFAULT_SETTINGS:
@@ -79,7 +68,7 @@ def list_settings(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.put("/{key}", response_model=SettingOut)
 def update_setting(key: str, payload: SettingUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_admin(user, db)
+    require_permission(user, "settings.manage", db)
     setting = db.scalar(select(SystemSetting).where(SystemSetting.key == key))
     if not setting:
         raise HTTPException(status_code=404, detail="الإعداد غير موجود")
