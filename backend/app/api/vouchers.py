@@ -14,6 +14,7 @@ from app.models.voucher import Voucher
 from app.models.financial import FinancialAccount
 from app.models.account import Account
 from app.models.settings import SystemSetting
+from app.models.currency import Currency
 
 router = APIRouter(prefix="/vouchers", tags=["السندات"])
 VALID_LINK_TYPES = {"hajj_booking", "umrah_booking", "service_order"}
@@ -74,6 +75,10 @@ def _validate_account_branch(db: Session, account_id: int, user: User) -> None:
         raise HTTPException(status_code=403, detail="الحساب تابع لفرع آخر")
 
 
+def _base_currency(db: Session) -> Currency | None:
+    return db.scalar(select(Currency).where(Currency.is_base.is_(True), Currency.is_active.is_(True)))
+
+
 @router.post("", response_model=VoucherOut, status_code=201)
 def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if payload.voucher_type not in {"receipt", "payment", "transfer"}:
@@ -84,6 +89,12 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
         raise HTTPException(status_code=400, detail="يجب تحديد رقم الخدمة المرتبطة")
     _validate_account_branch(db, payload.source_account_id, user)
     _validate_account_branch(db, payload.destination_account_id, user)
+
+    base_currency = _base_currency(db)
+    if not base_currency:
+        raise HTTPException(status_code=409, detail="يجب تحديد العملة الأساسية للنظام من شاشة الإعدادات قبل إضافة أي سند")
+    currency_id = payload.currency_id or base_currency.id
+
     legacy_manual = (payload.voucher_number or "").strip() or None
     manual_number = (payload.manual_voucher_number or "").strip() or legacy_manual
     voucher_number = _next_voucher_number(db, payload.voucher_type, payload.voucher_date)
@@ -98,7 +109,7 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
             description=payload.description,
             source_account_id=payload.source_account_id,
             destination_account_id=payload.destination_account_id,
-            currency_id=payload.currency_id,
+            currency_id=currency_id,
             exchange_rate=payload.exchange_rate,
             created_by=user.id,
             branch_id=user.branch_id,
@@ -145,4 +156,4 @@ def print_data(voucher_id: int, db: Session = Depends(get_db), user: User = Depe
     voucher = db.get(Voucher, voucher_id)
     if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
-    return {"voucher": VoucherOut.model_validate(voucher), "printed_by": user.full_name, "printed_by_username": user.username, "branch_id": user.branch_id}
+    return {"voucher": VoucherOut.model_validate(voucher), "printed_by": user.full_name, "printed_by_username": user.username, "branch_id": user.branch_id} 
