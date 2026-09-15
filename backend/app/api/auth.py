@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import create_access_token, verify_password
+from app.auth import create_access_token, get_current_user, user_permission_codes, user_role_names, verify_password
 from app.db.session import get_db
 from app.models.user import User
 
@@ -24,5 +24,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict[str, str
 
 
 @router.get("/me")
-def me(user: User = Depends(__import__("app.auth", fromlist=["get_current_user"]).get_current_user)) -> dict[str, object]:
-    return {"id": user.id, "username": user.username, "full_name": user.full_name, "branch_id": user.branch_id, "is_active": user.is_active}
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, object]:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "branch_id": user.branch_id,
+        "is_active": user.is_active,
+        "role_names": sorted(user_role_names(user.id, db)),
+        "permission_codes": sorted(user_permission_codes(user.id, db)),
+    }
