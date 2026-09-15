@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from decimal import Decimal
-
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,6 +49,7 @@ class ProgramBooking(Base):
     supplier_cost: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     remaining_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
+    supplier_paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     customer_type: Mapped[str] = mapped_column(String(20), default="direct", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="reserved", nullable=False)
