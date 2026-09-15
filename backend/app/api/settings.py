@@ -58,6 +58,18 @@ class SettingOut(BaseModel):
     is_editable: bool
 
 
+class BrandingOut(BaseModel):
+    company_name: str
+    company_phone: str
+    company_address: str
+    company_email: str
+    company_website: str
+    company_logo_url: str
+    print_footer: str
+    print_show_logo: bool
+    print_show_contact: bool
+
+
 def require_admin(user: User, db: Session) -> None:
     is_admin = db.scalar(
         select(Role.id)
@@ -68,18 +80,47 @@ def require_admin(user: User, db: Session) -> None:
         raise HTTPException(status_code=403, detail="صلاحية مدير النظام مطلوبة")
 
 
-@router.get("", response_model=list[SettingOut])
-def list_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_admin(user, db)
+def _ensure_defaults(db: Session) -> dict[str, SystemSetting]:
     existing = {s.key: s for s in db.scalars(select(SystemSetting)).all()}
     changed = False
     for key, value, value_type, category, description in DEFAULT_SETTINGS:
         if key not in existing:
-            db.add(SystemSetting(key=key, value=value, value_type=value_type, category=category, description_ar=description))
+            item = SystemSetting(key=key, value=value, value_type=value_type, category=category, description_ar=description)
+            db.add(item)
+            existing[key] = item
             changed = True
     if changed:
         db.commit()
-    return db.scalars(select(SystemSetting).order_by(SystemSetting.category, SystemSetting.key)).all()
+    return existing
+
+
+def _branding(existing: dict[str, SystemSetting]) -> BrandingOut:
+    def value(key: str, default: str = "") -> str:
+        return existing.get(key).value if existing.get(key) else default
+
+    return BrandingOut(
+        company_name=value("company_name", "وكالة مهراس للحج والعمرة والسفر"),
+        company_phone=value("company_phone"),
+        company_address=value("company_address"),
+        company_email=value("company_email"),
+        company_website=value("company_website"),
+        company_logo_url=value("company_logo_url"),
+        print_footer=value("print_footer", "شكرًا لثقتكم بنا — نسعد بخدمتكم دائمًا"),
+        print_show_logo=value("print_show_logo", "true").lower() == "true",
+        print_show_contact=value("print_show_contact", "true").lower() == "true",
+    )
+
+
+@router.get("/branding", response_model=BrandingOut)
+def get_branding(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return _branding(_ensure_defaults(db))
+
+
+@router.get("", response_model=list[SettingOut])
+def list_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_admin(user, db)
+    existing = _ensure_defaults(db)
+    return sorted(existing.values(), key=lambda s: (s.category, s.key))
 
 
 @router.put("/{key}", response_model=SettingOut)
