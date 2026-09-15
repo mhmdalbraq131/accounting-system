@@ -45,6 +45,7 @@ export const getAccounts=()=>api<any[]>("/accounts");
 export const createAccount=(payload:any)=>api<any>("/accounts",{method:"POST",body:JSON.stringify(payload)});
 export const getFinancial=()=>api<any[]>("/financial-accounts");
 export const createFinancial=(payload:any)=>api<any>("/financial-accounts",{method:"POST",body:JSON.stringify(payload)});
+export const updateFinancial=(id:number,payload:any)=>api<any>(`/financial-accounts/${id}`,{method:"PUT",body:JSON.stringify(payload)});
 export const getCurrencies=()=>api<any[]>("/currencies");
 export const createCurrency=(payload:any)=>api<any>("/currencies",{method:"POST",body:JSON.stringify(payload)});
 export const setBaseCurrency=(id:number)=>api<any>(`/currencies/${id}/set-base`,{method:"POST"});
