@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.branch import Branch
 from app.models.currency import Currency
 from app.models.financial import FinancialAccount
 from app.models.user import User
@@ -38,7 +39,7 @@ def _validate(db: Session, payload: FinancialIn, user: User) -> None:
         raise HTTPException(400, "الحساب المالي يجب أن يرتبط بحساب أصول")
     if user.branch_id is not None and ledger.branch_id not in (None, user.branch_id):
         raise HTTPException(403, "الحساب المحاسبي تابع لفرع آخر")
-    if payload.branch_id is not None and not db.get(__import__("app.models.branch", fromlist=["Branch"]).Branch, payload.branch_id):
+    if payload.branch_id is not None and not db.get(Branch, payload.branch_id):
         raise HTTPException(400, "الفرع غير موجود")
     if user.branch_id is not None and payload.branch_id not in (None, user.branch_id):
         raise HTTPException(403, "لا يمكنك إنشاء حساب مالي لفرع آخر")
