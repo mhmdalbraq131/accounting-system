@@ -2,7 +2,6 @@ import React,{useEffect,useMemo,useState} from "react";
 import {createVoucher,getFinancial,getHajjBookings,getParties,getServices,getUmrahBookings,postVoucher} from "./api";
 
 const money=(v:string|number)=>Number(v||0).toLocaleString("ar-YE",{minimumFractionDigits:2,maximumFractionDigits:2});
-
 type Payable={key:string;linked_service_type:"hajj_booking"|"umrah_booking"|"service_order";id:number;service:string;reference:string;supplier_id:number;cost:number;paid:number;remaining:number;details:string};
 
 export default function SupplierPaymentPanel(){
@@ -11,21 +10,19 @@ export default function SupplierPaymentPanel(){
   const chosen=rows.find(r=>r.key===selected);
   async function refresh(){
     try{
-      const [h,u,f,a,c,b,v]=await Promise.all([getHajjBookings(),getUmrahBookings(),getFinancial(),getParties("supplier"),getServices("flight"),getServices("bus"),getServices("visit")]);
-      const w=await getServices("work_visa");
+      const [h0,u0,f,a,flight,bus,visit,workVisa]=await Promise.all([getHajjBookings(),getUmrahBookings(),getFinancial(),getParties("supplier"),getServices("flight"),getServices("bus"),getServices("visit"),getServices("work_visa")]);
+      const h=h0 as any[]; const u=u0 as any[];
       const smap=new Map(a.map((s:any)=>[s.id,s.name]));
       const list:Payable[]=[];
-      for(const x of h.filter((b:any)=>b.status==="posted"&&Number(b.supplier_cost)>Number(b.supplier_paid_amount||0))) list.push({key:`hajj-${x.id}`,linked_service_type:"hajj_booking",id:x.id,service:"الحج",reference:`حجز حج #${x.id}`,supplier_id:x.supplier_id,cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:`${smap.get(x.supplier_id)||`مورد #${x.supplier_id}`}`});
-      for(const x of u.filter((b:any)=>b.status==="posted"&&Number(b.supplier_cost)>Number(b.supplier_paid_amount||0))) list.push({key:`umrah-${x.id}`,linked_service_type:"umrah_booking",id:x.id,service:"العمرة",reference:`حجز عمرة #${x.id}`,supplier_id:x.supplier_id,cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:`${smap.get(x.supplier_id)||`مورد #${x.supplier_id}`}`});
-      const groups:[[any[],string,string]]|any=[];
-      const generic=[...c,...b,...v,...w] as any[];
-      for(const x of generic.filter((r:any)=>r.status==="posted"&&Number(r.supplier_cost)>Number(r.supplier_paid_amount||0))) list.push({key:`service-${x.id}-${x.service_type}`,linked_service_type:"service_order",id:x.id,service:x.service_type==="flight"?"الطيران":x.service_type==="bus"?"الباصات":x.service_type==="visit"?"الزيارات":"فيز العمل",reference:x.reference_no,supplier_id:x.supplier_id,cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:`${smap.get(x.supplier_id)||`مورد #${x.supplier_id}`}`});
-      void groups;
+      for(const x of h.filter((r:any)=>r.status==="posted"&&Number(r.supplier_cost)>Number(r.supplier_paid_amount||0))) list.push({key:`hajj-${x.id}`,linked_service_type:"hajj_booking",id:x.id,service:"الحج",reference:`حجز حج #${x.id}`,supplier_id:Number(x.supplier_id),cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:String(smap.get(x.supplier_id)||`مورد #${x.supplier_id}`)});
+      for(const x of u.filter((r:any)=>r.status==="posted"&&Number(r.supplier_cost)>Number(r.supplier_paid_amount||0))) list.push({key:`umrah-${x.id}`,linked_service_type:"umrah_booking",id:x.id,service:"العمرة",reference:`حجز عمرة #${x.id}`,supplier_id:Number(x.supplier_id),cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:String(smap.get(x.supplier_id)||`مورد #${x.supplier_id}`)});
+      const generic=[...(flight as any[]),...(bus as any[]),...(visit as any[]),...(workVisa as any[])];
+      for(const x of generic.filter((r:any)=>r.status==="posted"&&r.supplier_id&&Number(r.supplier_cost)>Number(r.supplier_paid_amount||0))) list.push({key:`service-${x.service_type}-${x.id}`,linked_service_type:"service_order",id:x.id,service:x.service_type==="flight"?"الطيران":x.service_type==="bus"?"الباصات":x.service_type==="visit"?"الزيارات":"فيز العمل",reference:x.reference_no,supplier_id:Number(x.supplier_id),cost:Number(x.supplier_cost),paid:Number(x.supplier_paid_amount||0),remaining:Number(x.supplier_cost)-Number(x.supplier_paid_amount||0),details:String(smap.get(x.supplier_id)||`مورد #${x.supplier_id}`)});
       setSuppliers(a);setFinancial(f);setRows(list);setError("");
     }catch(e){setError(e instanceof Error?e.message:"تعذر تحميل مستحقات الموردين")}
   }
   useEffect(()=>{refresh()},[]);
-  useEffect(()=>{if(!selected&&rows[0])setSelected(rows[0].key)},[rows,selected]);
+  useEffect(()=>{if(!rows.some(r=>r.key===selected))setSelected(rows[0]?.key||"")},[rows,selected]);
   const stats=useMemo(()=>({count:rows.length,total:rows.reduce((n,r)=>n+r.cost,0),paid:rows.reduce((n,r)=>n+r.paid,0),remaining:rows.reduce((n,r)=>n+r.remaining,0)}),[rows]);
   async function save(e:React.FormEvent){e.preventDefault();setBusy(true);setError("");setMessage("");try{if(!chosen)throw new Error("اختر الخدمة المستحقة للمورد");const fa=financial.find(f=>f.id===Number(form.financial_id));if(!fa?.ledger_account_id)throw new Error("اختر حساب الدفع الصحيح");const supplier=suppliers.find(s=>s.id===chosen.supplier_id);if(!supplier?.account_id)throw new Error("المورد غير مربوط بحساب محاسبي");const amount=Number(form.amount);if(amount<=0)throw new Error("أدخل مبلغًا صحيحًا");if(amount>chosen.remaining)throw new Error("المبلغ أكبر من المتبقي للمورد");const v=await createVoucher({manual_voucher_number:form.manual_voucher_number.trim()||undefined,voucher_type:"payment",voucher_date:form.date,amount,description:form.description,source_account_id:Number(fa.ledger_account_id),destination_account_id:Number(supplier.account_id),linked_service_type:chosen.linked_service_type,linked_service_id:chosen.id});await postVoucher(v.id);setForm(x=>({...x,manual_voucher_number:"",amount:""}));setMessage(`تم سداد ${money(amount)} للمورد وربطه بـ ${chosen.service} ${chosen.reference}.`);await refresh()}catch(e){setError(e instanceof Error?e.message:"تعذر تسجيل سداد المورد")}finally{setBusy(false)}}
   return <>
