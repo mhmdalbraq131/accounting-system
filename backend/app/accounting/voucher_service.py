@@ -39,8 +39,7 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
     if not source_account_id or not destination_account_id: raise ValueError("يجب تحديد حساب المصدر وحساب الوجهة")
     if source_account_id == destination_account_id: raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
     if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first(): raise ValueError("رقم السند النظامي مستخدم مسبقًا")
-    if manual_voucher_number and db.query(Voucher).filter(Voucher.manual_voucher_number == manual_voucher_number).first():
-        raise ValueError("رقم السند اليدوي مستخدم مسبقًا")
+    if manual_voucher_number and db.query(Voucher).filter(Voucher.manual_voucher_number == manual_voucher_number).first(): raise ValueError("رقم السند اليدوي مستخدم مسبقًا")
 
     source = db.get(Account, source_account_id); destination = db.get(Account, destination_account_id)
     if not source or not source.is_active or not destination or not destination.is_active: raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
@@ -77,10 +76,6 @@ def _journal_lines(voucher: Voucher) -> list[dict]:
     return [{"account_id": voucher.destination_account_id, "debit": posted_amount}, {"account_id": voucher.source_account_id, "credit": posted_amount}]
 
 
-def _linked_booking(voucher: Voucher) -> ProgramBooking | None:
-    return None
-
-
 def _get_linked(db: Session, voucher: Voucher):
     if not voucher.linked_service_type or voucher.linked_service_id is None:
         return None
@@ -90,7 +85,9 @@ def _get_linked(db: Session, voucher: Voucher):
         from app.models.travel import TravelProgram
         program_type = db.scalar(select(TravelProgram.program_type).where(TravelProgram.id == booking.program_id))
         expected = "hajj" if voucher.linked_service_type == "hajj_booking" else "umrah"
-        if program_type != expected: raise ValueError(f"نوع الخدمة لا يطابق حجز {"الحج" if expected == "hajj" else "العمرة"}")
+        if program_type != expected:
+            label = "الحج" if expected == "hajj" else "العمرة"
+            raise ValueError(f"نوع الخدمة لا يطابق حجز {label}")
         return booking
     if voucher.linked_service_type == "service_order":
         row = db.get(ServiceOrder, voucher.linked_service_id)
@@ -127,19 +124,15 @@ def _validate_linked_receipt(db: Session, voucher: Voucher) -> None:
     party = db.get(Party, party_id) if party_id else None
     if not party or party.account_id is None: raise ValueError("الطرف المالي للخدمة غير مربوط بحساب محاسبي")
     if voucher.source_account_id != party.account_id: raise ValueError("حساب مصدر السند يجب أن يكون حساب الوكيل أو العميل المرتبط بالخدمة")
-    if voucher.branch_id is not None and getattr(row, "branch_id", None) not in (None, voucher.branch_id):
-        raise ValueError("الخدمة المرتبطة تابعة لفرع آخر")
+    if voucher.branch_id is not None and getattr(row, "branch_id", None) not in (None, voucher.branch_id): raise ValueError("الخدمة المرتبطة تابعة لفرع آخر")
     amount = voucher.base_amount or voucher.amount
-    if amount > Decimal(str(row.remaining_amount or 0)):
-        raise ValueError("مبلغ التحصيل يتجاوز المتبقي على الخدمة")
+    if amount > Decimal(str(row.remaining_amount or 0)): raise ValueError("مبلغ التحصيل يتجاوز المتبقي على الخدمة")
 
 
 def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     if voucher.status != "draft": raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
     _validate_linked_receipt(db, voucher)
-    entry = create_journal(db, entry_number=f"JV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
-                           description=voucher.description, lines=_journal_lines(voucher), created_by=voucher.created_by,
-                           branch_id=voucher.branch_id, status="posted")
+    entry = create_journal(db, entry_number=f"JV-{voucher.voucher_number}", entry_date=voucher.voucher_date, description=voucher.description, lines=_journal_lines(voucher), created_by=voucher.created_by, branch_id=voucher.branch_id, status="posted")
     entry.posted_at = datetime.utcnow(); voucher.journal_entry_id = entry.id; voucher.status = "posted"; voucher.posted_at = datetime.utcnow()
     _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount)
     db.flush(); return voucher
@@ -150,9 +143,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
     original = db.get(JournalEntry, voucher.journal_entry_id)
     if not original: raise ValueError("القيد المرتبط بالسند غير موجود")
     lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines]
-    reversal = create_journal(db, entry_number=f"REV-{voucher.voucher_number}", entry_date=voucher.voucher_date,
-                              description=f"عكس السند {voucher.voucher_number}: {voucher.description}", lines=lines,
-                              created_by=voucher.created_by, branch_id=voucher.branch_id, status="posted")
+    reversal = create_journal(db, entry_number=f"REV-{voucher.voucher_number}", entry_date=voucher.voucher_date, description=f"عكس السند {voucher.voucher_number}: {voucher.description}", lines=lines, created_by=voucher.created_by, branch_id=voucher.branch_id, status="posted")
     reversal.posted_at = datetime.utcnow()
     _apply_service_receipt(db, voucher, voucher.base_amount or voucher.amount, reverse=True)
     voucher.status = "cancelled"; voucher.posted_at = datetime.utcnow(); db.flush(); return voucher
