@@ -32,6 +32,9 @@ DEFAULT_PERMISSIONS = [
     ("vouchers.cancel", "إلغاء السندات"),
     ("reports.view", "عرض التقارير"),
     ("settings.manage", "إدارة الإعدادات"),
+    ("branches.manage", "إدارة الفروع"),
+    ("users.manage", "إدارة المستخدمين"),
+    ("roles.manage", "إدارة الأدوار والصلاحيات"),
 ]
 
 
@@ -62,6 +65,16 @@ def seed() -> None:
                 db.flush()
             if not db.scalar(select(RolePermission).where(RolePermission.role_id == role.id, RolePermission.permission_id == permission.id)):
                 db.add(RolePermission(role_id=role.id, permission_id=permission.id))
+
+        sub_admin = db.scalar(select(Role).where(Role.name == "sub_admin"))
+        if not sub_admin:
+            sub_admin = Role(name="sub_admin")
+            db.add(sub_admin)
+            db.flush()
+        for code in ("branches.manage", "users.manage"):
+            permission = db.scalar(select(Permission).where(Permission.code == code))
+            if permission and not db.scalar(select(RolePermission).where(RolePermission.role_id == sub_admin.id, RolePermission.permission_id == permission.id)):
+                db.add(RolePermission(role_id=sub_admin.id, permission_id=permission.id))
 
         if not db.scalar(select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)):
             db.add(UserRole(user_id=user.id, role_id=role.id))
