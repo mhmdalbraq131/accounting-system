@@ -3,8 +3,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, require_permission
+from app.auth import get_current_user
 from app.db.session import get_db
+from app.models.role import Role, UserRole
 from app.models.settings import SystemSetting
 from app.models.user import User
 
@@ -15,8 +16,8 @@ DEFAULT_SETTINGS = [
     ("company_phone", "", "string", "company", "رقم التواصل"),
     ("company_address", "", "string", "company", "عنوان الوكالة"),
     ("company_logo_url", "", "string", "company", "رابط/مسار شعار الوكالة"),
-    ("currency", "YER", "string", "financial", "العملة الأساسية"),
-    ("currency_name_ar", "ريال يمني", "string", "financial", "اسم العملة بالعربية"),
+    ("currency", "YER", "string", "financial", "العملة الأساسية (تُدار من شاشة العملات)"),
+    ("currency_name_ar", "ريال يمني", "string", "financial", "اسم العملة الأساسية بالعربية"),
     ("fiscal_year_start_month", "1", "integer", "financial", "شهر بداية السنة المالية"),
     ("voucher_prefix_receipt", "RV", "string", "financial", "بادئة سند القبض"),
     ("voucher_prefix_payment", "PV", "string", "financial", "بادئة سند الصرف"),
@@ -52,9 +53,19 @@ class SettingOut(BaseModel):
     is_editable: bool
 
 
+def require_admin(user: User, db: Session) -> None:
+    is_admin = db.scalar(
+        select(Role.id)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id, Role.name.in_(["admin", "administrator", "مدير النظام"]))
+    )
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="صلاحية مدير النظام مطلوبة")
+
+
 @router.get("", response_model=list[SettingOut])
 def list_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_permission(user, "settings.manage", db)
+    require_admin(user, db)
     existing = {s.key: s for s in db.scalars(select(SystemSetting)).all()}
     changed = False
     for key, value, value_type, category, description in DEFAULT_SETTINGS:
@@ -68,7 +79,9 @@ def list_settings(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.put("/{key}", response_model=SettingOut)
 def update_setting(key: str, payload: SettingUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_permission(user, "settings.manage", db)
+    require_admin(user, db)
+    if key in {"currency", "currency_name_ar"}:
+        raise HTTPException(status_code=409, detail="العملة الأساسية تُدار من شاشة العملات ولا يمكن تغييرها من الإعدادات العامة")
     setting = db.scalar(select(SystemSetting).where(SystemSetting.key == key))
     if not setting:
         raise HTTPException(status_code=404, detail="الإعداد غير موجود")
