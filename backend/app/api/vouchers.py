@@ -16,12 +16,12 @@ from app.models.account import Account
 from app.models.settings import SystemSetting
 
 router = APIRouter(prefix="/vouchers", tags=["السندات"])
-
-VALID_LINK_TYPES = {"hajj_booking", "umrah_booking", "flight", "bus", "visit", "work_visa", "visa_service"}
+VALID_LINK_TYPES = {"hajj_booking", "umrah_booking", "service_order"}
 
 
 class VoucherCreate(BaseModel):
-    voucher_number: str | None = None
+    voucher_number: str | None = None  # legacy clients may still send this; it is treated as manual reference.
+    manual_voucher_number: str | None = None
     voucher_type: str
     voucher_date: date
     amount: Decimal
@@ -37,6 +37,7 @@ class VoucherCreate(BaseModel):
 class VoucherOut(VoucherCreate):
     id: int
     voucher_number: str
+    manual_voucher_number: str | None
     status: str
     journal_entry_id: int | None
     model_config = ConfigDict(from_attributes=True)
@@ -83,11 +84,14 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
         raise HTTPException(status_code=400, detail="يجب تحديد رقم الخدمة المرتبطة")
     _validate_account_branch(db, payload.source_account_id, user)
     _validate_account_branch(db, payload.destination_account_id, user)
-    voucher_number = (payload.voucher_number or "").strip() or _next_voucher_number(db, payload.voucher_type, payload.voucher_date)
+    legacy_manual = (payload.voucher_number or "").strip() or None
+    manual_number = (payload.manual_voucher_number or "").strip() or legacy_manual
+    voucher_number = _next_voucher_number(db, payload.voucher_type, payload.voucher_date)
     try:
         voucher = create_voucher(
             db,
             voucher_number=voucher_number,
+            manual_voucher_number=manual_number,
             voucher_type=payload.voucher_type,
             voucher_date=payload.voucher_date,
             amount=payload.amount,
@@ -101,12 +105,9 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
             linked_service_type=payload.linked_service_type,
             linked_service_id=payload.linked_service_id,
         )
-        db.commit()
-        db.refresh(voucher)
-        return voucher
+        db.commit(); db.refresh(voucher); return voucher
     except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
+        db.rollback(); raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("", response_model=list[VoucherOut])
@@ -120,47 +121,28 @@ def list_vouchers(db: Session = Depends(get_db), user: User = Depends(get_curren
 @router.post("/{voucher_id}/post", response_model=VoucherOut)
 def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
-    if not voucher:
-        raise HTTPException(status_code=404, detail="السند غير موجود")
-    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
-        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
-    if user.branch_id is not None:
-        for account_id in (voucher.source_account_id, voucher.destination_account_id):
-            other = db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == account_id, FinancialAccount.branch_id != user.branch_id))
-            if other is not None:
-                raise HTTPException(status_code=403, detail="الحساب المالي تابع لفرع آخر")
+    if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
-        post_voucher(db, voucher)
-        db.commit()
-        db.refresh(voucher)
-        return voucher
+        post_voucher(db, voucher); db.commit(); db.refresh(voucher); return voucher
     except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
+        db.rollback(); raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/{voucher_id}/cancel", response_model=VoucherOut)
 def cancel(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
-    if not voucher:
-        raise HTTPException(status_code=404, detail="السند غير موجود")
-    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
-        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
+    if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
-        cancel_voucher(db, voucher)
-        db.commit()
-        db.refresh(voucher)
-        return voucher
+        cancel_voucher(db, voucher); db.commit(); db.refresh(voucher); return voucher
     except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
+        db.rollback(); raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{voucher_id}/print-data")
 def print_data(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     voucher = db.get(Voucher, voucher_id)
-    if not voucher:
-        raise HTTPException(status_code=404, detail="السند غير موجود")
-    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id):
-        raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
+    if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
+    if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     return {"voucher": VoucherOut.model_validate(voucher), "printed_by": user.full_name, "printed_by_username": user.username, "branch_id": user.branch_id}
