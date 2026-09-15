@@ -27,16 +27,20 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
                    description: str, source_account_id: int | None, destination_account_id: int | None,
                    currency_id: int | None = None, exchange_rate: Decimal | None = None,
                    created_by: int | None = None, branch_id: int | None = None,
-                   linked_service_type: str | None = None, linked_service_id: int | None = None) -> Voucher:
+                   linked_service_type: str | None = None, linked_service_id: int | None = None,
+                   manual_voucher_number: str | None = None) -> Voucher:
     voucher_number = voucher_number.strip(); description = description.strip()
-    if not voucher_number: raise ValueError("رقم السند مطلوب")
+    manual_voucher_number = (manual_voucher_number or "").strip() or None
+    if not voucher_number: raise ValueError("رقم السند النظامي مطلوب")
     if not description: raise ValueError("بيان السند مطلوب")
     if voucher_type not in VALID_TYPES: raise ValueError("نوع السند غير مدعوم")
     amount = Decimal(str(amount))
     if amount <= 0: raise ValueError("مبلغ السند يجب أن يكون أكبر من صفر")
     if not source_account_id or not destination_account_id: raise ValueError("يجب تحديد حساب المصدر وحساب الوجهة")
     if source_account_id == destination_account_id: raise ValueError("لا يمكن أن يكون حساب المصدر والوجهة واحدًا")
-    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first(): raise ValueError("رقم السند مستخدم مسبقًا")
+    if db.query(Voucher).filter(Voucher.voucher_number == voucher_number).first(): raise ValueError("رقم السند النظامي مستخدم مسبقًا")
+    if manual_voucher_number and db.query(Voucher).filter(Voucher.manual_voucher_number == manual_voucher_number).first():
+        raise ValueError("رقم السند اليدوي مستخدم مسبقًا")
 
     source = db.get(Account, source_account_id); destination = db.get(Account, destination_account_id)
     if not source or not source.is_active or not destination or not destination.is_active: raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
@@ -59,7 +63,8 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         if Decimal(str(exchange_rate)) <= 0: raise ValueError("سعر الصرف يجب أن يكون أكبر من صفر")
 
     base_amount = amount * Decimal(str(exchange_rate)) if exchange_rate is not None else amount
-    voucher = Voucher(voucher_number=voucher_number, voucher_type=voucher_type, voucher_date=voucher_date, description=description,
+    voucher = Voucher(voucher_number=voucher_number, manual_voucher_number=manual_voucher_number,
+                      voucher_type=voucher_type, voucher_date=voucher_date, description=description,
                       amount=amount, source_account_id=source_account_id, destination_account_id=destination_account_id,
                       created_by=created_by, branch_id=branch_id, linked_service_type=linked_service_type,
                       linked_service_id=linked_service_id, status="draft", created_at=datetime.utcnow(),
@@ -73,8 +78,6 @@ def _journal_lines(voucher: Voucher) -> list[dict]:
 
 
 def _linked_booking(voucher: Voucher) -> ProgramBooking | None:
-    if voucher.linked_service_type in {"hajj_booking", "umrah_booking"} and voucher.linked_service_id is not None:
-        return voucher._db_session.get(ProgramBooking, voucher.linked_service_id) if hasattr(voucher, "_db_session") else None
     return None
 
 
@@ -84,12 +87,10 @@ def _get_linked(db: Session, voucher: Voucher):
     if voucher.linked_service_type in {"hajj_booking", "umrah_booking"}:
         booking = db.get(ProgramBooking, voucher.linked_service_id)
         if not booking: raise ValueError("الخدمة المرتبطة بسند القبض غير موجودة")
-        if voucher.linked_service_type == "hajj_booking":
-            program_type = db.scalar(select(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.program_type).where(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.id == booking.program_id))
-            if program_type != "hajj": raise ValueError("نوع الخدمة لا يطابق حجز الحج")
-        else:
-            program_type = db.scalar(select(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.program_type).where(__import__("app.models.travel", fromlist=["TravelProgram"]).TravelProgram.id == booking.program_id))
-            if program_type != "umrah": raise ValueError("نوع الخدمة لا يطابق حجز العمرة")
+        from app.models.travel import TravelProgram
+        program_type = db.scalar(select(TravelProgram.program_type).where(TravelProgram.id == booking.program_id))
+        expected = "hajj" if voucher.linked_service_type == "hajj_booking" else "umrah"
+        if program_type != expected: raise ValueError(f"نوع الخدمة لا يطابق حجز {"الحج" if expected == "hajj" else "العمرة"}")
         return booking
     if voucher.linked_service_type == "service_order":
         row = db.get(ServiceOrder, voucher.linked_service_id)
