@@ -23,6 +23,9 @@ export type Booking = { id:number; program_id:number; pilgrim_id:number; custome
 export type VisaService = { id:number; pilgrim_id:number; customer_id:number|null; supplier_id:number|null; visa_type:string; sale_price:string; supplier_cost:string; profit:string; status:string; journal_entry_id:number|null; created_at:string; branch_id:number|null };
 export type HajjQuota = { id:number; name_ar:string; season:string; supplier_id:number; total_units:number; used_units:number; remaining_units:number; unit_cost:string; status:string; branch_id:number|null };
 export type ServiceOrder = { id:number; service_type:string; reference_no:string; service_date:string; description:string; details:Record<string,unknown>|null; pilgrim_id:number|null; customer_id:number|null; agent_id:number|null; supplier_id:number|null; sale_price:string; supplier_cost:string; paid_amount:string; remaining_amount:string; profit:string; status:string; journal_entry_id:number|null; created_by:number|null; branch_id:number|null; created_at:string; posted_at:string|null };
+export type Role = { id:number; name:string; is_active:boolean };
+export type Permission = { id:number; code:string; name_ar:string };
+export type ManagedUser = { id:number; username:string; full_name:string; branch_id:number|null; is_active:boolean; role_names:string[]; permission_codes:string[] };
 
 const queryParams = (params?:ReportParams) => { const q = new URLSearchParams(); if(params?.from_date) q.set("from_date",params.from_date); if(params?.to_date) q.set("to_date",params.to_date); const s=q.toString(); return s?`?${s}`:""; };
 
@@ -32,8 +35,9 @@ export const getPrograms=()=>api<Program[]>("/travel/programs");
 export const getPilgrims=()=>api<Pilgrim[]>("/travel/pilgrims");
 export const getDashboard=()=>api<Dashboard>("/dashboard");
 export const getBranches=()=>api<any[]>("/branches");
-export const getUsers=()=>api<any[]>("/users");
-export const getMe=()=>api<{id:number;username:string;full_name:string;branch_id:number|null;is_active:boolean}>("/auth/me");
+export const updateBranch=(id:number,payload:any)=>api<any>(`/branches/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+export const getUsers=()=>api<ManagedUser[]>("/users");
+export const getMe=()=>api<{id:number;username:string;full_name:string;branch_id:number|null;is_active:boolean;role_names?:string[];permission_codes?:string[]}>("/auth/me");
 export const getParties=(type?:string)=>api<any[]>(`/parties${type?`?party_type=${encodeURIComponent(type)}`:""}`);
 export const createParty=(payload:any)=>api<any>("/parties",{method:"POST",body:JSON.stringify(payload)});
 export const deleteParty=(id:number)=>api<any>(`/parties/${id}`,{method:"DELETE"});
@@ -43,8 +47,12 @@ export const getFinancial=()=>api<any[]>("/financial-accounts");
 export const createFinancial=(payload:any)=>api<any>("/financial-accounts",{method:"POST",body:JSON.stringify(payload)});
 export const getCurrencies=()=>api<any[]>("/currencies");
 export const createCurrency=(payload:any)=>api<any>("/currencies",{method:"POST",body:JSON.stringify(payload)});
-export const getRoles=()=>api<any[]>("/users/roles");
-export const createUser=(payload:any)=>api<any>("/users",{method:"POST",body:JSON.stringify(payload)});
+export const getRoles=()=>api<Role[]>("/users/roles");
+export const getPermissions=()=>api<Permission[]>("/users/permissions");
+export const getRolePermissions=(id:number)=>api<Permission[]>(`/users/roles/${id}/permissions`);
+export const updateRolePermissions=(id:number,permission_codes:string[])=>api<{role_id:number;permission_codes:string[]}>(`/users/roles/${id}/permissions`,{method:"PUT",body:JSON.stringify({permission_codes})});
+export const createUser=(payload:any)=>api<ManagedUser>("/users",{method:"POST",body:JSON.stringify(payload)});
+export const updateUser=(id:number,payload:any)=>api<ManagedUser>(`/users/${id}`,{method:"PUT",body:JSON.stringify(payload)});
 export const createBranch=(payload:any)=>api<any>("/branches",{method:"POST",body:JSON.stringify(payload)});
 export const createPilgrim=(payload:any)=>api<Pilgrim>("/travel/pilgrims",{method:"POST",body:JSON.stringify(payload)});
 export const createProgram=(payload:any)=>api<Program>("/travel/programs",{method:"POST",body:JSON.stringify(payload)});
