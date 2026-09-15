@@ -55,8 +55,6 @@ def upgrade() -> None:
                 {"role_id": role_id, "permission_id": permission_id},
             )
 
-    # نائب المدير ومشرف الفرع يستطيعان إدارة المستخدمين/الفروع حسب النطاق
-    # لاحقًا يمكن توسيع صلاحياتهما من شاشة الأدوار دون تعديل الكود.
     limited = bind.execute(
         sa.text("SELECT id FROM roles WHERE name IN ('sub_admin','نائب المدير','مشرف الفرع')")
     ).fetchall()
@@ -76,8 +74,16 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    permission_codes = [code for code, _ in PERMISSIONS]
-    for code in permission_codes:
+    permission_ids = bind.execute(
+        sa.text("SELECT id FROM permissions WHERE code IN ('settings.manage','branches.manage','users.manage','roles.manage')")
+    ).fetchall()
+    for (permission_id,) in permission_ids:
+        bind.execute(sa.text("DELETE FROM role_permissions WHERE permission_id = :permission_id"), {"permission_id": permission_id})
+    for code, _ in PERMISSIONS:
         bind.execute(sa.text("DELETE FROM permissions WHERE code = :code"), {"code": code})
     for role_name in ("sub_admin", "نائب المدير", "مشرف الفرع"):
-        bind.execute(sa.text("DELETE FROM roles WHERE name = :name"), {"name": role_name})
+        role_id = bind.execute(sa.text("SELECT id FROM roles WHERE name = :name"), {"name": role_name}).fetchone()
+        if role_id:
+            bind.execute(sa.text("DELETE FROM user_roles WHERE role_id = :role_id"), {"role_id": role_id[0]})
+            bind.execute(sa.text("DELETE FROM role_permissions WHERE role_id = :role_id"), {"role_id": role_id[0]})
+            bind.execute(sa.text("DELETE FROM roles WHERE id = :role_id"), {"role_id": role_id[0]})
