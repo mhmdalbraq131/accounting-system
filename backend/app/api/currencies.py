@@ -42,6 +42,9 @@ def _sync_base_setting(db: Session, currency: Currency) -> None:
     setting = db.scalar(select(SystemSetting).where(SystemSetting.key == "currency"))
     if setting:
         setting.value = currency.code
+    name_setting = db.scalar(select(SystemSetting).where(SystemSetting.key == "currency_name_ar"))
+    if name_setting:
+        name_setting.value = currency.name_ar
 
 
 @router.get("")
@@ -64,11 +67,7 @@ def list_currencies(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 
 @router.post("", status_code=201)
-def create_currency(
-    payload: CurrencyIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def create_currency(payload: CurrencyIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     code = payload.code.upper().strip()
     if db.scalar(select(Currency).where(Currency.code == code)):
         raise HTTPException(409, "رمز العملة مستخدم مسبقًا")
@@ -87,11 +86,7 @@ def create_currency(
 
 
 @router.post("/{currency_id}/set-base")
-def set_base_currency(
-    currency_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def set_base_currency(currency_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     currency = db.get(Currency, currency_id)
     if not currency or not currency.is_active:
         raise HTTPException(404, "العملة غير موجودة أو غير نشطة")
@@ -121,6 +116,8 @@ def create_rate(payload: RateIn, db: Session = Depends(get_db), user: User = Dep
     c = db.get(Currency, payload.currency_id)
     if not c:
         raise HTTPException(404, "العملة غير موجودة")
+    if c.is_base:
+        raise HTTPException(400, "العملة الرسمية لا تحتاج سعر صرف؛ سعرها إلى نفسها يساوي 1")
     r = ExchangeRate(currency_id=c.id, rate_to_base=payload.rate_to_base)
     db.add(r)
     db.commit()
@@ -133,11 +130,7 @@ def latest_rate(currency_id: int, db: Session = Depends(get_db), user: User = De
     c = db.get(Currency, currency_id)
     if not c:
         raise HTTPException(404, "العملة غير موجودة")
-    r = db.scalar(
-        select(ExchangeRate)
-        .where(ExchangeRate.currency_id == currency_id)
-        .order_by(ExchangeRate.effective_at.desc())
-    )
+    r = db.scalar(select(ExchangeRate).where(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()))
     if not r and not c.is_base:
         raise HTTPException(404, "لا يوجد سعر صرف مسجل لهذه العملة")
     return {
