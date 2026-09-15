@@ -58,18 +58,6 @@ class SettingOut(BaseModel):
     is_editable: bool
 
 
-class BrandingOut(BaseModel):
-    company_name: str
-    company_phone: str
-    company_address: str
-    company_email: str
-    company_website: str
-    company_logo_url: str
-    print_footer: str
-    print_show_logo: bool
-    print_show_contact: bool
-
-
 def require_admin(user: User, db: Session) -> None:
     is_admin = db.scalar(
         select(Role.id)
@@ -94,10 +82,21 @@ def _ensure_defaults(db: Session) -> dict[str, SystemSetting]:
     return existing
 
 
+class BrandingOut(BaseModel):
+    company_name: str
+    company_phone: str
+    company_address: str
+    company_email: str
+    company_website: str
+    company_logo_url: str
+    print_footer: str
+    print_show_logo: bool
+    print_show_contact: bool
+
+
 def _branding(existing: dict[str, SystemSetting]) -> BrandingOut:
     def value(key: str, default: str = "") -> str:
         return existing.get(key).value if existing.get(key) else default
-
     return BrandingOut(
         company_name=value("company_name", "وكالة مهراس للحج والعمرة والسفر"),
         company_phone=value("company_phone"),
@@ -118,7 +117,8 @@ def get_branding(db: Session = Depends(get_db), user: User = Depends(get_current
 
 @router.get("", response_model=list[SettingOut])
 def list_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_admin(user, db)
+    # القراءة مطلوبة أيضًا للطباعة وتطبيق هوية الوكالة على جميع المستخدمين.
+    # التعديل يبقى محصورًا بمدير النظام في PUT أدناه.
     existing = _ensure_defaults(db)
     return sorted(existing.values(), key=lambda s: (s.category, s.key))
 
