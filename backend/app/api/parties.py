@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.party import Party
 from app.models.account import Account
@@ -72,6 +72,7 @@ def create_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.create", db)
     if payload.party_type not in ALLOWED_TYPES:
         raise HTTPException(400, "نوع الطرف غير مدعوم")
     data = payload.model_dump()
@@ -91,6 +92,7 @@ def update_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.update", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
@@ -107,6 +109,7 @@ def update_party(
 
 @router.delete("/{party_id}", response_model=PartyOut)
 def delete_party(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "parties.disable", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
@@ -123,6 +126,7 @@ def disable_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.disable", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
