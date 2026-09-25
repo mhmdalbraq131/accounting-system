@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_permission
@@ -448,7 +448,7 @@ def balance_sheet(
     result_stmt = (
         select(
             func.coalesce(func.sum(
-                func.case(
+                case(
                     (Account.account_type == "revenue", JournalLine.credit - JournalLine.debit),
                     (Account.account_type.in_(["expense", "cost_of_service"]), JournalLine.debit - JournalLine.credit),
                     else_=0,
