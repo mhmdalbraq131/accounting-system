@@ -39,7 +39,8 @@ export type ManagedUser = { id:number; username:string; full_name:string; branch
 const queryParams = (params?:ReportParams) => { const q = new URLSearchParams(); if(params?.from_date) q.set("from_date",params.from_date); if(params?.to_date) q.set("to_date",params.to_date); const s=q.toString(); return s?`?${s}`:""; };
 
 export const getSettings=()=>api<Setting[]>("/settings");
-export const updateSetting=(key:string,value:string)=>api<Setting>(`/settings/${encodeURIComponent(key)}`,{method:"PUT",body:JSON.stringify({value})});\nexport const updateSettingsBatch=(settings:Record<string,string>)=>api<Setting[]>(`/settings/batch`,{method:"PUT",body:JSON.stringify({settings})});
+export const updateSetting=(key:string,value:string)=>api<Setting>(`/settings/${encodeURIComponent(key)}`,{method:"PUT",body:JSON.stringify({value})});
+export const updateSettingsBatch=(settings:Record<string,string>)=>api<Setting[]>(`/settings/batch`,{method:"PUT",body:JSON.stringify({settings})});
 export const getPrograms=()=>api<Program[]>("/travel/programs");
 export const getPilgrims=()=>api<Pilgrim[]>("/travel/pilgrims");
 export const getDashboard=()=>api<Dashboard>("/dashboard");
