@@ -193,8 +193,23 @@ def close_period(period_id: int, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.get("/audit")
-def list_audit_logs(db: Session = Depends(get_db), user: User = Depends(get_current_user), limit: int = 100):
+def list_audit_logs(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    limit: int = 100,
+    action: str | None = None,
+    entity_type: str | None = None,
+):
     require_permission(user, "audit.read", db)
     limit = max(1, min(limit, 500))
-    stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+    stmt = select(AuditLog)
+    if user.branch_id is not None:
+        stmt = stmt.where(
+            (AuditLog.user_id.in_(select(User.id).where((User.branch_id == user.branch_id) | User.branch_id.is_(None))))
+        )
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+    if entity_type:
+        stmt = stmt.where(AuditLog.entity_type == entity_type)
+    stmt = stmt.order_by(AuditLog.created_at.desc()).limit(limit)
     return list(db.scalars(stmt))
