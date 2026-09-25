@@ -222,7 +222,7 @@ def _validate_linked_voucher(db: Session, voucher: Voucher) -> None:
             raise ValueError("مبلغ الصرف يتجاوز المتبقي للمورد على الخدمة")
 
 
-def post_voucher(db: Session, voucher: Voucher) -> Voucher:
+def post_voucher(db: Session, voucher: Voucher, *, posted_by: int | None = None) -> Voucher:
     if voucher.status != "draft":
         raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
     _validate_linked_voucher(db, voucher)
@@ -232,7 +232,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
         entry_date=voucher.voucher_date,
         description=voucher.description,
         lines=_journal_lines(voucher),
-        created_by=voucher.created_by,
+        created_by=posted_by if posted_by is not None else voucher.created_by,
         branch_id=voucher.branch_id,
         status="posted",
     )
@@ -244,7 +244,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     _apply_service_receipt(db, voucher, amount)
     _apply_supplier_payment(db, voucher, amount)
     db.add(AuditLog(
-        user_id=voucher.created_by,
+        user_id=posted_by if posted_by is not None else voucher.created_by,
         action="post",
         entity_type="voucher",
         entity_id=voucher.id,
@@ -254,7 +254,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     return voucher
 
 
-def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
+def cancel_voucher(db: Session, voucher: Voucher, *, cancelled_by: int | None = None) -> Voucher:
     if voucher.status != "posted" or not voucher.journal_entry_id:
         raise ValueError("لا يمكن إلغاء سند غير مرحّل")
     original = db.get(JournalEntry, voucher.journal_entry_id)
@@ -267,7 +267,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
         entry_date=voucher.voucher_date,
         description=f"عكس السند {voucher.voucher_number}: {voucher.description}",
         lines=lines,
-        created_by=voucher.created_by,
+        created_by=cancelled_by if cancelled_by is not None else voucher.created_by,
         branch_id=voucher.branch_id,
         status="posted",
         fiscal_period_id=original.fiscal_period_id,
@@ -279,7 +279,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
     voucher.status = "cancelled"
     voucher.posted_at = datetime.utcnow()
     db.add(AuditLog(
-        user_id=voucher.created_by,
+        user_id=cancelled_by if cancelled_by is not None else voucher.created_by,
         action="cancel",
         entity_type="voucher",
         entity_id=voucher.id,
