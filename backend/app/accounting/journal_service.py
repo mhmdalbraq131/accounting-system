@@ -1,10 +1,11 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.account import Account
 from app.models.accounting_dimension import AccountingDimension
 from app.models.audit_log import AuditLog
 from app.models.fiscal_period import FiscalPeriod
@@ -36,10 +37,7 @@ def _resolve_period(db: Session, entry_date, branch_id: int | None, fiscal_perio
             FiscalPeriod.branch_id.is_(None) if branch_id is None else FiscalPeriod.branch_id.in_([None, branch_id]),
         ).order_by(FiscalPeriod.branch_id.desc().nulls_last())
     )
-    if period:
-        return period
-    # Backward compatibility: before periods are configured, existing workflows remain usable.
-    return None
+    return period
 
 
 def create_journal(
@@ -60,6 +58,8 @@ def create_journal(
         raise ValueError("وصف القيد مطلوب")
     if len(lines) < 2:
         raise ValueError("القيد يجب أن يحتوي على سطرين على الأقل")
+    if status not in {"draft", "posted"}:
+        raise ValueError("حالة القيد غير صحيحة")
 
     period = _resolve_period(db, entry_date, branch_id, fiscal_period_id)
 
@@ -70,6 +70,38 @@ def create_journal(
     if total_debit <= 0:
         raise ValueError("يجب أن يكون للقيد مبلغ أكبر من صفر")
 
+    validated_lines: list[dict] = []
+    for line in lines:
+        account_id = line.get("account_id")
+        if not account_id:
+            raise ValueError("كل سطر يجب أن يحتوي على حساب")
+        account = db.get(Account, account_id)
+        if not account or not account.is_active:
+            raise ValueError("الحساب غير موجود أو غير نشط")
+        if branch_id is not None and account.branch_id not in (None, branch_id):
+            raise ValueError("الحساب تابع لفرع آخر")
+
+        debit = Decimal(str(line.get("debit", 0)))
+        credit = Decimal(str(line.get("credit", 0)))
+        if debit < 0 or credit < 0 or (debit > 0 and credit > 0):
+            raise ValueError("كل سطر يجب أن يكون مدينًا أو دائنًا فقط وبقيمة غير سالبة")
+
+        dimension_id = line.get("dimension_id")
+        if dimension_id is not None:
+            dimension = db.get(AccountingDimension, dimension_id)
+            if not dimension or not dimension.is_active:
+                raise ValueError("البعد المحاسبي غير موجود أو غير نشط")
+            if branch_id is not None and dimension.branch_id not in (None, branch_id):
+                raise ValueError("البعد المحاسبي تابع لفرع آخر")
+
+        validated_lines.append({
+            "account_id": account_id,
+            "dimension_id": dimension_id,
+            "description": line.get("description"),
+            "debit": debit,
+            "credit": credit,
+        })
+
     entry = JournalEntry(
         entry_number=entry_number,
         entry_date=entry_date,
@@ -78,37 +110,18 @@ def create_journal(
         branch_id=branch_id,
         fiscal_period_id=period.id if period else fiscal_period_id,
         status=status,
+        posted_at=datetime.utcnow() if status == "posted" else None,
     )
     db.add(entry)
     db.flush()
 
-    for line in lines:
-        if not line.get("account_id"):
-            raise ValueError("كل سطر يجب أن يحتوي على حساب")
-        debit = Decimal(str(line.get("debit", 0)))
-        credit = Decimal(str(line.get("credit", 0)))
-        if debit < 0 or credit < 0 or (debit > 0 and credit > 0):
-            raise ValueError("كل سطر يجب أن يكون مدينًا أو دائنًا فقط وبقيمة غير سالبة")
-        dimension_id = line.get("dimension_id")
-        if dimension_id is not None:
-            dimension = db.get(AccountingDimension, dimension_id)
-            if not dimension or not dimension.is_active:
-                raise ValueError("البعد المحاسبي غير موجود أو غير نشط")
-            if branch_id is not None and dimension.branch_id not in (None, branch_id):
-                raise ValueError("البعد المحاسبي تابع لفرع آخر")
-        db.add(JournalLine(
-            journal_entry_id=entry.id,
-            account_id=line["account_id"],
-            dimension_id=dimension_id,
-            description=line.get("description"),
-            debit=debit,
-            credit=credit,
-        ))
+    for line in validated_lines:
+        db.add(JournalLine(journal_entry_id=entry.id, **line))
 
     db.flush()
     db.add(AuditLog(
         user_id=created_by,
-        action="create",
+        action="post" if status == "posted" else "create",
         entity_type="journal_entry",
         entity_id=entry.id,
         details=json.dumps({"entry_number": entry.entry_number, "status": status}, ensure_ascii=False),
