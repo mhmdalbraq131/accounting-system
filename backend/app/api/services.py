@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal
+from app.accounting.journal_service import create_journal, resolve_reversal_date
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
@@ -139,7 +139,7 @@ def cancel_service(service_type: str, service_id: int, db: Session = Depends(get
         original = db.get(__import__("app.models.journal", fromlist=["JournalEntry"]).JournalEntry, row.journal_entry_id)
         if not original: raise HTTPException(409, "القيد المرتبط بالخدمة غير موجود")
         try:
-            create_journal(db, entry_number=f"REV-{service_type.upper()}-{row.id}", entry_date=date.today(), description=f"عكس خدمة {SERVICE_LABELS[service_type]} #{row.id}",
+            create_journal(db, entry_number=f"REV-{service_type.upper()}-{row.id}", entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id), description=f"عكس خدمة {SERVICE_LABELS[service_type]} #{row.id}",
                            lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines], created_by=user.id, branch_id=row.branch_id, status="posted")
         except ValueError as exc:
             db.rollback(); raise HTTPException(400, str(exc))
