@@ -151,7 +151,7 @@ def cancel_invoice(invoice_id:int,db:Session=Depends(get_db),user:User=Depends(g
         ar=_account(db,x.receivable_account_id,user); income=_account(db,x.revenue_account_id,user)
         debit,credit=(ar.id,income.id) if x.invoice_type=="purchase" else (income.id,ar.id)
         try:
-            je=create_journal(db,entry_number=f"REV-INV-{x.invoice_number}",entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),description=f"عكس الفاتورة {x.invoice_number}",
+            je=create_journal(db,entry_number=f"REV-INV-{x.invoice_number}",entry_date=resolve_reversal_date(db, original.entry_date, x.branch_id),description=f"عكس الفاتورة {x.invoice_number}",
                               created_by=user.id,branch_id=x.branch_id,status="posted",
                               lines=[{"account_id":debit,"debit":x.total_amount,"credit":0},{"account_id":credit,"debit":0,"credit":x.total_amount}])
         except (ValueError,UnbalancedJournalError) as exc: raise HTTPException(400,str(exc))
@@ -275,7 +275,7 @@ def cancel_payment(payment_id:int,db:Session=Depends(get_db),user:User=Depends(g
         else:
             debit_account, credit_account = source.id, target.id
         try:
-            create_journal(db,entry_number=f"REV-PAY-{x.payment_number}",entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),description=f"عكس الدفعة {x.payment_number}",
+            create_journal(db,entry_number=f"REV-PAY-{x.payment_number}",entry_date=resolve_reversal_date(db, original.entry_date, x.branch_id),description=f"عكس الدفعة {x.payment_number}",
                            created_by=user.id,branch_id=x.branch_id,status="posted",
                            lines=[{"account_id":debit_account,"debit":x.amount,"credit":0},{"account_id":credit_account,"debit":0,"credit":x.amount}])
         except (ValueError,UnbalancedJournalError) as exc: raise HTTPException(400,str(exc))
