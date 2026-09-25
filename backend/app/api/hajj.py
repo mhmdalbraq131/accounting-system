@@ -69,7 +69,8 @@ def _setting_account(db: Session, user: User, key: str, expected_type: str, labe
         candidates = list(db.scalars(stmt.order_by(Account.code)))
         if len(candidates) != 1: raise HTTPException(400, f"اضبط حساب {label} في الإعدادات أو اترك حسابًا واحدًا من نوع {expected_type}")
         account = candidates[0]
-    if not account.is_active or account.account_type != expected_type: raise HTTPException(400, f"حساب {label} غير صالح")
+    allowed_types = {"expense", "cost_of_service"} if expected_type == "cost_of_service" else {expected_type}
+    if not account.is_active or account.account_type not in allowed_types: raise HTTPException(400, f"حساب {label} غير صالح")
     _scope(user, account.branch_id); return account
 
 def _create_service_booking(db: Session, user: User, *, program: TravelProgram, pilgrim: Pilgrim, agent_id: int | None, customer_id: int | None, supplier_id: int, sale_price: Decimal, supplier_cost: Decimal, quota_id: int | None = None) -> ProgramBooking:
