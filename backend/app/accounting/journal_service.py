@@ -60,6 +60,8 @@ def create_journal(
         raise ValueError("القيد يجب أن يحتوي على سطرين على الأقل")
     if status not in {"draft", "posted"}:
         raise ValueError("حالة القيد غير صحيحة")
+    if db.scalar(select(JournalEntry.id).where(JournalEntry.entry_number == entry_number)):
+        raise ValueError("رقم القيد مستخدم مسبقًا")
 
     period = _resolve_period(db, entry_date, branch_id, fiscal_period_id)
 
