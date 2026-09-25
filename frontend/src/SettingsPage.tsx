@@ -29,7 +29,7 @@ export default function SettingsPage({onOpenExtraService,onBrandingChange}:{onOp
      const updated=await updateSettingsBatch(changed);
      setSettings(updated);setDraft(Object.fromEntries(updated.map(x=>[x.key,x.value])));
      const m=Object.fromEntries(updated.map(x=>[x.key,x.value]));
-     onBrandingChange?.({name:m.company_name||"نظام إدارة الحج والعمرة والسفر",logo:m.company_logo_url||"",phone:m.company_phone||"",address:m.company_address||""});
+     const nextBranding={name:m.company_name||"نظام إدارة الحج والعمرة والسفر",logo:m.company_logo_url||"",phone:m.company_phone||"",address:m.company_address||""}; onBrandingChange?.(nextBranding); localStorage.setItem("accounting_branding",JSON.stringify(nextBranding));
      setMessage("تم حفظ جميع التغييرات بنجاح");
    }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ الإعدادات");}
    finally{setSaving(false);}
