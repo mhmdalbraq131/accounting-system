@@ -195,7 +195,11 @@ def trial_balance(
     user: User = Depends(get_current_user),
 ):
     require_permission(user, "reports.view", db)
-    accounts_stmt = select(Account).where(Account.is_active.is_(True))
+    accounts_stmt = select(Account).where(
+        (Account.is_active.is_(True))
+        | select(JournalLine.id).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(JournalLine.account_id == Account.id, JournalEntry.status == "posted").exists()
+    )
     if user.branch_id is not None:
         accounts_stmt = accounts_stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     accounts = db.scalars(accounts_stmt.order_by(Account.code)).all()
@@ -294,7 +298,7 @@ def cash_movement(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    stmt = select(FinancialAccount).where(FinancialAccount.is_active.is_(True))
+    require_permission(user, "reports.view", db)\n    stmt = select(FinancialAccount).where(FinancialAccount.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((FinancialAccount.branch_id == user.branch_id) | FinancialAccount.branch_id.is_(None))
     financial_accounts = db.scalars(stmt.order_by(FinancialAccount.name)).all()
@@ -341,7 +345,7 @@ def party_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    party = db.get(Party, party_id)
+    require_permission(user, "reports.view", db)\n    party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     if user.branch_id is not None and party.branch_id not in (None, user.branch_id):
@@ -396,6 +400,58 @@ def party_report(
         "total_credit": credit_total,
         "balance": running,
         "rows": rows,
+        "printed_by": user.full_name,
+        "username": user.username,
+        "branch_id": user.branch_id,
+    }
+
+
+@router.get("/balance-sheet")
+def balance_sheet(
+    as_of_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_permission(user, "reports.view", db)
+    stmt = (
+        select(Account.id, Account.code, Account.name_ar, Account.account_type,
+               func.coalesce(func.sum(JournalLine.debit), 0),
+               func.coalesce(func.sum(JournalLine.credit), 0))
+        .join(JournalLine, JournalLine.account_id == Account.id)
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["asset", "liability", "equity"]))
+        .group_by(Account.id, Account.code, Account.name_ar, Account.account_type)
+        .order_by(Account.code)
+    )
+    if user.branch_id is not None:
+        stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
+        stmt = stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    if as_of_date:
+        stmt = stmt.where(JournalEntry.entry_date <= as_of_date)
+
+    sections = {"asset": [], "liability": [], "equity": []}
+    totals = {"asset": Decimal("0"), "liability": Decimal("0"), "equity": Decimal("0")}
+    opening_stmt = select(Account.id, Account.opening_balance)
+    opening = {account_id: Decimal(str(balance or 0)) for account_id, balance in db.execute(opening_stmt).all()}
+
+    for account_id, code, name_ar, account_type, debit, credit in db.execute(stmt).all():
+        raw = opening.get(account_id, Decimal("0")) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+        amount = raw if account_type == "asset" else -raw
+        sections[account_type].append({
+            "account_id": account_id, "code": code, "name_ar": name_ar, "amount": amount,
+        })
+        totals[account_type] += amount
+
+    return {
+        "as_of_date": as_of_date,
+        "assets": sections["asset"],
+        "liabilities": sections["liability"],
+        "equity": sections["equity"],
+        "total_assets": totals["asset"],
+        "total_liabilities": totals["liability"],
+        "total_equity": totals["equity"],
+        "liabilities_plus_equity": totals["liability"] + totals["equity"],
+        "balanced": totals["asset"] == totals["liability"] + totals["equity"],
         "printed_by": user.full_name,
         "username": user.username,
         "branch_id": user.branch_id,
