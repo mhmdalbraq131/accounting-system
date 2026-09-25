@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
 from app.models.expense import Expense
@@ -87,6 +87,7 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("", status_code=201)
 def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.create", db)
     expense_number = (payload.expense_number or "").strip() or _next_expense_number(db, payload.expense_date.year)
     if db.scalar(select(Expense).where(Expense.expense_number == expense_number)):
         raise HTTPException(409, "رقم المصروف مستخدم مسبقًا")
@@ -130,6 +131,7 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
 
 @router.post("/{expense_id}/post")
 def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.post", db)
     expense = db.get(Expense, expense_id)
     if not expense:
         raise HTTPException(404, "المصروف غير موجود")
@@ -186,6 +188,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.post("/{expense_id}/cancel")
 def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.cancel", db)
     expense = db.get(Expense, expense_id)
     if not expense:
         raise HTTPException(404, "المصروف غير موجود")
