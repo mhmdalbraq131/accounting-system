@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.models.account import Account
 from app.models.expense import Expense
 from app.models.journal import JournalEntry
+from app.models.audit_log import AuditLog
 from app.models.party import Party
 from app.models.user import User
 
@@ -125,6 +126,11 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
         status="draft",
     )
     db.add(expense)
+    db.flush()
+    db.add(AuditLog(
+        user_id=user.id, action="create", entity_type="expense", entity_id=expense.id,
+        details=f'{{"expense_number":"{expense.expense_number}","amount":"{expense.amount}"}}',
+    ))
     db.commit()
     db.refresh(expense)
     return expense
@@ -170,7 +176,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
                 {"account_id": expense_account_id, "debit": expense.amount, "credit": Decimal("0")},
                 {"account_id": credit_account_id, "debit": Decimal("0"), "credit": expense.amount},
             ],
-            created_by=expense.created_by,
+            created_by=user.id,
             branch_id=expense.branch_id,
             status="posted",
         )
@@ -179,6 +185,10 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         expense.journal_entry_id = entry.id
         expense.status = "posted"
         expense.posted_at = datetime.utcnow()
+        db.add(AuditLog(
+            user_id=user.id, action="post", entity_type="expense", entity_id=expense.id,
+            details=f'{{"expense_number":"{expense.expense_number}","journal_entry_id":{entry.id}}}',
+        ))
         db.commit()
         db.refresh(expense)
         return expense
@@ -209,7 +219,7 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
             entry_date=expense.expense_date,
             description=f"عكس المصروف {expense.expense_number}: {expense.description}",
             lines=[
-                {"account_id": line.account_id, "debit": line.credit, "credit": line.debit}
+                {"account_id": line.account_id, "dimension_id": line.dimension_id, "debit": line.credit, "credit": line.debit}
                 for line in original.lines
             ],
             created_by=user.id,
@@ -218,6 +228,10 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
         )
         reversal.posted_at = datetime.utcnow()
         expense.status = "cancelled"
+        db.add(AuditLog(
+            user_id=user.id, action="cancel", entity_type="expense", entity_id=expense.id,
+            details=f'{{"expense_number":"{expense.expense_number}","reversal_journal_entry_id":{reversal.id}}}',
+        ))
         db.commit()
         db.refresh(expense)
         return expense
