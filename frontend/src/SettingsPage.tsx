@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   createBranch, createCurrency, createRate, createUser, getAccounts, getBranches, getCurrencies,
   getPermissions, getRolePermissions, getRoles, getSettings, getUsers, setBaseCurrency, updateBranch,
-  updateRolePermissions, updateSetting, updateUser, type ManagedUser, type Permission, type Role, type Setting,
+  updateRolePermissions, updateSetting, updateSettingsBatch, updateUser, type ManagedUser, type Permission, type Role, type Setting,
 } from "./api";
 
 const ACCOUNT_KEYS = new Set(["travel_revenue_account_id","travel_cost_account_id","visa_revenue_account_id","visa_cost_account_id","flight_revenue_account_id","flight_cost_account_id","bus_revenue_account_id","bus_cost_account_id","visit_revenue_account_id","visit_cost_account_id","work_visa_revenue_account_id","work_visa_cost_account_id"]);
