@@ -21,6 +21,9 @@ from app.api.services import router as services_router
 from app.api.vouchers import router as vouchers_router
 from app.api.users import router as users_router
 from app.core.config import settings
+from app.db.schema_compat import ensure_schema_compatibility
+
+ensure_schema_compatibility()
 
 app = FastAPI(
     title="Accounting System API",
