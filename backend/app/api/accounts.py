@@ -12,7 +12,7 @@ from app.models.user import User
 
 router = APIRouter(prefix="/accounts", tags=["الحسابات"])
 
-ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
+ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense", "cost_of_service"}
 
 
 class AccountCreate(BaseModel):
