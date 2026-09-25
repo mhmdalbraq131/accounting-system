@@ -125,3 +125,8 @@ export const getFiscalPeriods=()=>api<FiscalPeriod[]>("/accounting-controls/peri
 export const createFiscalPeriod=(payload:Partial<FiscalPeriod>)=>api<FiscalPeriod>("/accounting-controls/periods",{method:"POST",body:JSON.stringify(payload)});
 export const closeFiscalPeriod=(id:number)=>api<{id:number;is_closed:boolean}>(`/accounting-controls/periods/${id}/close`,{method:"POST"});
 export const getAuditLogs=(limit=100)=>api<AuditLog[]>(`/accounting-controls/audit?limit=${limit}`);
+
+export const getJournals=(status?:string)=>api<any[]>(`/journals${status?`?status=${encodeURIComponent(status)}`:""}`);
+export const createJournal=(payload:any)=>api<any>("/journals",{method:"POST",body:JSON.stringify(payload)});
+export const postJournal=(id:number)=>api<any>(`/journals/${id}/post`,{method:"POST"});
+export const cancelJournal=(id:number)=>api<any>(`/journals/${id}/cancel`,{method:"POST"});
