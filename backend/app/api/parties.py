@@ -54,6 +54,7 @@ def list_parties(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.view", db)
     query = select(Party).order_by(Party.id.desc())
     if user.branch_id is not None:
         query = query.where((Party.branch_id == user.branch_id) | Party.branch_id.is_(None))
