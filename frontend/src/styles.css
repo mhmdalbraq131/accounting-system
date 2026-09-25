@@ -31,3 +31,5 @@ button:disabled{cursor:not-allowed}
 .form-actions{gap:9px;flex-wrap:wrap}
 .workspace-main .page{overflow-x:hidden}
 @media(max-width:760px){.workspace-layout{padding:10px}.grid-2{grid-template-columns:1fr}.system-tree{margin-bottom:10px}.tree-head{padding:14px}.panel{padding:14px}.table-wrap{max-width:100%}.form-grid{grid-template-columns:1fr}.form-actions{justify-content:stretch}.form-actions button{flex:1 1 auto}}
+
+.form-grid .full{grid-column:1/-1}
