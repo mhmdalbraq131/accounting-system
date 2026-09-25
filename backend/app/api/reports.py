@@ -46,9 +46,15 @@ def financial_summary(
     user: User = Depends(get_current_user),
 ):
     require_permission(user, "reports.view", db)
-    # The summary is intentionally based on posted accounting entries.
-    base = select(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).join(Account, JournalLine.account_id == Account.id)
-    base = base.where(JournalEntry.status == "posted")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(400, "تاريخ البداية يجب أن يكون قبل أو مساويًا لتاريخ النهاية")
+
+    base = (
+        select(JournalLine)
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, JournalLine.account_id == Account.id)
+        .where(JournalEntry.status == "posted")
+    )
     if user.branch_id is not None:
         base = base.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
     if from_date:
@@ -56,35 +62,29 @@ def financial_summary(
     if to_date:
         base = base.where(JournalEntry.entry_date <= to_date)
 
-    revenue = db.scalar(
-        select(func.coalesce(func.sum(JournalLine.credit - JournalLine.debit), 0))
-        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .join(Account, JournalLine.account_id == Account.id)
-        .where(JournalEntry.status == "posted", Account.account_type == "revenue")
-        .where(*([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
-        .where(*([] if from_date is None else [JournalEntry.entry_date >= from_date]))
-        .where(*([] if to_date is None else [JournalEntry.entry_date <= to_date]))
-    ) or 0
-    expenses = db.scalar(
-        select(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
-        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .join(Account, JournalLine.account_id == Account.id)
-        .where(JournalEntry.status == "posted", Account.account_type == "expense")
-        .where(*([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
-        .where(*([] if from_date is None else [JournalEntry.entry_date >= from_date]))
-        .where(*([] if to_date is None else [JournalEntry.entry_date <= to_date]))
-    ) or 0
+    rows = db.execute(base).scalars().all()
+    revenue = Decimal("0")
+    service_cost = Decimal("0")
+    operating_expenses = Decimal("0")
+    for line in rows:
+        account = db.get(Account, line.account_id)
+        if account.account_type == "revenue":
+            revenue += Decimal(str(line.credit or 0)) - Decimal(str(line.debit or 0))
+        elif account.account_type == "cost_of_service":
+            service_cost += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
+        elif account.account_type == "expense":
+            operating_expenses += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
 
-    revenue = Decimal(str(revenue))
-    expenses = Decimal(str(expenses))
+    gross_profit = revenue - service_cost
+    net_profit = gross_profit - operating_expenses
     return {
         "from_date": from_date,
         "to_date": to_date,
         "revenue": revenue,
-        "service_cost": Decimal("0"),
-        "gross_profit": revenue,
-        "expenses": expenses,
-        "net_profit": revenue - expenses,
+        "service_cost": service_cost,
+        "gross_profit": gross_profit,
+        "expenses": operating_expenses,
+        "net_profit": net_profit,
         "source": "posted_journals",
         "printed_by": user.full_name,
         "username": user.username,
@@ -257,7 +257,7 @@ def profit_loss(
                func.coalesce(func.sum(JournalLine.credit), 0).label("credit"))
         .join(JournalLine, JournalLine.account_id == Account.id)
         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense"]))
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense", "cost_of_service"]))
         .group_by(Account.id, Account.code, Account.name_ar, Account.account_type)
         .order_by(Account.code)
     )
