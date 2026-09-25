@@ -193,6 +193,19 @@ def party_services_report(
             "balance_delta": debit - credit,
         })
 
+    # A service can be discovered through both its source row and a linked voucher.
+    # Keep one journal occurrence per service type to avoid double-counting the same posting.
+    deduped = []
+    seen = set()
+    for row in rows:
+        key = (row.get("entry_id"), row.get("service_type"))
+        if key[0] is not None and key in seen:
+            continue
+        if key[0] is not None:
+            seen.add(key)
+        deduped.append(row)
+    rows = deduped
+
     rows.sort(key=lambda r: (r["entry_date"], str(r["entry_number"])))
     total_debit = sum((Decimal(str(r["debit"] or 0)) for r in rows), Decimal("0"))
     total_credit = sum((Decimal(str(r["credit"] or 0)) for r in rows), Decimal("0"))
