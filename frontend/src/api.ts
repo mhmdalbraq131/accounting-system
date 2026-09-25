@@ -146,3 +146,5 @@ export const postPayment=(id:number)=>api<Payment>(`/ar-ap/payments/${id}/post`,
 export const cancelPayment=(id:number)=>api<Payment>(`/ar-ap/payments/${id}/cancel`,{method:"POST"});
 export const allocatePayment=(id:number,invoice_id:number,amount:number)=>api<any>(`/ar-ap/payments/${id}/allocate`,{method:"POST",body:JSON.stringify({invoice_id,amount})});
 export const getAging=(invoice_type:"sales"|"purchase")=>api<any>(`/ar-ap/aging?invoice_type=${invoice_type}`);
+
+export const getServiceProfitability=(params?:{service_type?:string;from_date?:string;to_date?:string})=>api<any>(`/reports/service-profitability?${new URLSearchParams(Object.entries(params??{}).filter(([,v])=>v).map(([k,v])=>[k,String(v)])).toString()}`);
