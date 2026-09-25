@@ -205,7 +205,7 @@ def list_audit_logs(
     stmt = select(AuditLog)
     if user.branch_id is not None:
         stmt = stmt.where(
-            (AuditLog.user_id.in_(select(User.id).where((User.branch_id == user.branch_id) | User.branch_id.is_(None))))
+            (AuditLog.user_id.in_(select(User.id).where(User.branch_id == user.branch_id)))
         )
     if action:
         stmt = stmt.where(AuditLog.action == action)
