@@ -250,7 +250,7 @@ def profit_loss(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    stmt = (
+    require_permission(user, "reports.view", db)\n    stmt = (
         select(Account.id, Account.code, Account.name_ar, Account.account_type,
                func.coalesce(func.sum(JournalLine.debit), 0).label("debit"),
                func.coalesce(func.sum(JournalLine.credit), 0).label("credit"))
