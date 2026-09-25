@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
@@ -20,6 +22,7 @@ class AccountCreate(BaseModel):
     name_ar: str
     account_type: str
     parent_id: int | None = None
+    opening_balance: Decimal = Decimal("0")
 
 
 class AccountUpdate(BaseModel):
@@ -70,6 +73,8 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db), user: 
         raise HTTPException(400, "رمز واسم الحساب مطلوبان")
     if payload.account_type not in ACCOUNT_TYPES:
         raise HTTPException(400, "نوع الحساب غير صحيح")
+    if payload.opening_balance < 0:
+        raise HTTPException(400, "الرصيد الافتتاحي لا يمكن أن يكون سالبًا")
     if db.scalar(select(Account).where(Account.code == payload.code.strip())):
         raise HTTPException(409, "رمز الحساب مستخدم مسبقًا")
     _validate_parent(db, payload.parent_id, None, user)
@@ -79,6 +84,7 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db), user: 
         account_type=payload.account_type,
         parent_id=payload.parent_id,
         branch_id=user.branch_id,
+        opening_balance=payload.opening_balance,
     )
     db.add(account)
     db.flush()
