@@ -46,6 +46,27 @@ def _resolve_period(db: Session, entry_date, branch_id: int | None, fiscal_perio
     return None
 
 
+def resolve_reversal_date(db: Session, original_date, branch_id: int | None):
+    """Return an open fiscal-period date suitable for reversing a posted entry."""
+    from datetime import date
+
+    today = date.today()
+    candidates = list(db.scalars(
+        select(FiscalPeriod).where(
+            FiscalPeriod.is_closed.is_(False),
+            FiscalPeriod.branch_id.is_(None) if branch_id is None else FiscalPeriod.branch_id.in_([None, branch_id]),
+            FiscalPeriod.end_date >= original_date,
+        ).order_by(FiscalPeriod.start_date)
+    ))
+    for period in candidates:
+        if period.start_date <= today <= period.end_date:
+            return today
+    for period in candidates:
+        if period.start_date >= original_date:
+            return period.start_date
+    raise ValueError("لا توجد فترة محاسبية مفتوحة يمكن تسجيل قيد العكس فيها")
+
+
 def create_journal(
     db: Session,
     *,
