@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
 from app.models.user import User
@@ -33,6 +33,7 @@ def list_accounts(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(payload: AccountCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "accounts.create", db)
     if payload.account_type not in {"asset", "liability", "equity", "revenue", "expense"}: raise HTTPException(400, "نوع الحساب غير صحيح")
     if db.scalar(select(Account).where(Account.code == payload.code)): raise HTTPException(409, "رمز الحساب مستخدم مسبقًا")
     if payload.parent_id is not None:
