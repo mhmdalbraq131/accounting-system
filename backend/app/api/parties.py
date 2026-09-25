@@ -9,6 +9,7 @@ from app.models.party import Party
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/parties", tags=["الأطراف والعملاء والموردون والوكلاء"])
 
@@ -81,6 +82,9 @@ def create_party(
     _validate_account(db, account_id, user)
     party = Party(**data, account_id=account_id, branch_id=user.branch_id)
     db.add(party)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="party", entity_id=party.id))
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -116,6 +120,7 @@ def delete_party(party_id: int, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
     party.is_active = False
+    db.add(AuditLog(user_id=user.id, action="disable", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -140,6 +145,7 @@ def disable_party(
 
 @router.get("/{party_id}/statement")
 def party_statement(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "parties.view", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
