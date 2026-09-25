@@ -187,7 +187,7 @@ def close_period(period_id: int, db: Session = Depends(get_db), user: User = Dep
             Expense.status == "draft",
             Expense.expense_date >= period.start_date,
             Expense.expense_date <= period.end_date,
-            Expense.branch_id.is_(None) if period.branch_id is None else Expense.branch_id == period.branch_id,
+            Expense.branch_id.is_(None) if period.branch_id is None else (Expense.branch_id == period.branch_id) | Expense.branch_id.is_(None),
         ).limit(1)
     )
     if draft_expense is not None:
