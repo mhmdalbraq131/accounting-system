@@ -95,7 +95,7 @@ def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_u
     require_permission(user, "users.manage", db)
     stmt = select(User).order_by(User.full_name)
     if user.branch_id is not None:
-        stmt = stmt.where((User.branch_id == user.branch_id) | User.branch_id.is_(None))
+        stmt = stmt.where(User.branch_id == user.branch_id)
     return [_user_out(item, db) for item in db.scalars(stmt).all()]
 
 
@@ -106,7 +106,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user: User =
         raise HTTPException(409, "اسم المستخدم مستخدم مسبقًا")
     if payload.branch_id is not None and not db.get(Branch, payload.branch_id):
         raise HTTPException(400, "الفرع غير موجود")
-    if user.branch_id is not None and payload.branch_id not in (None, user.branch_id):
+    if user.branch_id is not None and payload.branch_id != user.branch_id:
         raise HTTPException(403, "لا يمكنك إنشاء مستخدم تابع لفرع آخر")
     data = payload.model_dump()
     role_id = data.pop("role_id")
@@ -130,14 +130,14 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(404, "المستخدم غير موجود")
-    if current_user.branch_id is not None and target.branch_id not in (None, current_user.branch_id):
+    if current_user.branch_id is not None and target.branch_id != current_user.branch_id:
         raise HTTPException(403, "المستخدم تابع لفرع آخر")
     duplicate = db.scalar(select(User).where(User.username == payload.username, User.id != user_id))
     if duplicate:
         raise HTTPException(409, "اسم المستخدم مستخدم مسبقًا")
     if payload.branch_id is not None and not db.get(Branch, payload.branch_id):
         raise HTTPException(400, "الفرع غير موجود")
-    if current_user.branch_id is not None and payload.branch_id not in (None, current_user.branch_id):
+    if current_user.branch_id is not None and payload.branch_id != current_user.branch_id:
         raise HTTPException(403, "لا يمكنك نقل المستخدم إلى فرع آخر")
     if payload.role_id is not None and not db.get(Role, payload.role_id):
         raise HTTPException(400, "الدور غير موجود")
