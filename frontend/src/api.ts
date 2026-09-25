@@ -112,3 +112,15 @@ export const cancelVisa=(id:number)=>api<VisaService>(`/travel/visas/${id}/cance
 export const getExpenses=()=>api<any[]>("/expenses");
 export const createExpense=(payload:any)=>api<any>("/expenses",{method:"POST",body:JSON.stringify(payload)});
 export const login=(username:string,password:string)=>api<{access_token:string;token_type:string}>("/auth/login",{method:"POST",body:JSON.stringify({username,password})});
+
+
+export type AccountingDimension = { id:number; dimension_type:string; code:string; name_ar:string; branch_id:number|null; is_active:boolean };
+export type FiscalPeriod = { id:number; name:string; start_date:string; end_date:string; is_closed:boolean; branch_id:number|null };
+export type AuditLog = { id:number; user_id:number|null; action:string; entity_type:string; entity_id:number|null; details:string|null; created_at:string };
+
+export const getAccountingDimensions=()=>api<AccountingDimension[]>("/accounting-controls/dimensions");
+export const createAccountingDimension=(payload:Partial<AccountingDimension>)=>api<AccountingDimension>("/accounting-controls/dimensions",{method:"POST",body:JSON.stringify(payload)});
+export const getFiscalPeriods=()=>api<FiscalPeriod[]>("/accounting-controls/periods");
+export const createFiscalPeriod=(payload:Partial<FiscalPeriod>)=>api<FiscalPeriod>("/accounting-controls/periods",{method:"POST",body:JSON.stringify(payload)});
+export const closeFiscalPeriod=(id:number)=>api<{id:number;is_closed:boolean}>(`/accounting-controls/periods/${id}/close`,{method:"POST"});
+export const getAuditLogs=(limit=100)=>api<AuditLog[]>(`/accounting-controls/audit?limit=${limit}`);
