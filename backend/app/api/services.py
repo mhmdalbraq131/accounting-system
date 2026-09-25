@@ -139,7 +139,7 @@ def cancel_service(service_type: str, service_id: int, db: Session = Depends(get
         original = db.get(__import__("app.models.journal", fromlist=["JournalEntry"]).JournalEntry, row.journal_entry_id)
         if not original: raise HTTPException(409, "القيد المرتبط بالخدمة غير موجود")
         try:
-            create_journal(db, entry_number=f"REV-{service_type.upper()}-{row.id}", entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id), description=f"عكس خدمة {SERVICE_LABELS[service_type]} #{row.id}",
+            create_journal(db, entry_number=f"REV-{service_type.upper()}-{row.id}", entry_date=resolve_reversal_date(db, original.entry_date, row.branch_id), description=f"عكس خدمة {SERVICE_LABELS[service_type]} #{row.id}",
                            lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines], created_by=user.id, branch_id=row.branch_id, status="posted")
         except ValueError as exc:
             db.rollback(); raise HTTPException(400, str(exc))
