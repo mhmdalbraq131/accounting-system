@@ -1,11 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial import FinancialAccount
@@ -20,7 +22,10 @@ PAYMENT_LINK_TYPES = {"hajj_booking", "umrah_booking", "service_order"}
 
 
 def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> FinancialAccount | None:
-    return db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == ledger_account_id, FinancialAccount.active.is_(True)))
+    return db.scalar(select(FinancialAccount).where(
+        FinancialAccount.ledger_account_id == ledger_account_id,
+        FinancialAccount.is_active.is_(True),
+    ))
 
 
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date, amount: Decimal,
@@ -73,7 +78,9 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         if currency.is_base:
             exchange_rate = Decimal("1")
         elif exchange_rate is None:
-            rate = db.query(ExchangeRate).filter(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()).first()
+            rate = db.query(ExchangeRate).filter(
+                ExchangeRate.currency_id == currency_id
+            ).order_by(ExchangeRate.effective_at.desc()).first()
             if not rate:
                 raise ValueError("يجب تحديد سعر صرف للعملة")
             exchange_rate = rate.rate_to_base
@@ -102,6 +109,13 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
     )
     db.add(voucher)
     db.flush()
+    db.add(AuditLog(
+        user_id=created_by,
+        action="create",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "type": voucher.voucher_type}, ensure_ascii=False),
+    ))
     return voucher
 
 
@@ -229,6 +243,13 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     amount = voucher.base_amount or voucher.amount
     _apply_service_receipt(db, voucher, amount)
     _apply_supplier_payment(db, voucher, amount)
+    db.add(AuditLog(
+        user_id=voucher.created_by,
+        action="post",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "journal_entry_id": entry.id}, ensure_ascii=False),
+    ))
     db.flush()
     return voucher
 
@@ -239,7 +260,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
     original = db.get(JournalEntry, voucher.journal_entry_id)
     if not original:
         raise ValueError("القيد المرتبط بالسند غير موجود")
-    lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines]
+    lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit, "dimension_id": line.dimension_id} for line in original.lines]
     reversal = create_journal(
         db,
         entry_number=f"REV-{voucher.voucher_number}",
@@ -249,6 +270,7 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
         created_by=voucher.created_by,
         branch_id=voucher.branch_id,
         status="posted",
+        fiscal_period_id=original.fiscal_period_id,
     )
     reversal.posted_at = datetime.utcnow()
     amount = voucher.base_amount or voucher.amount
@@ -256,5 +278,12 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
     _apply_supplier_payment(db, voucher, amount, reverse=True)
     voucher.status = "cancelled"
     voucher.posted_at = datetime.utcnow()
+    db.add(AuditLog(
+        user_id=voucher.created_by,
+        action="cancel",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "reversal_entry_id": reversal.id}, ensure_ascii=False),
+    ))
     db.flush()
     return voucher
