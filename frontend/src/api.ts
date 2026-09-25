@@ -132,3 +132,17 @@ export const getJournals=(status?:string)=>api<any[]>(`/journals${status?`?statu
 export const createJournal=(payload:any)=>api<any>("/journals",{method:"POST",body:JSON.stringify(payload)});
 export const postJournal=(id:number)=>api<any>(`/journals/${id}/post`,{method:"POST"});
 export const cancelJournal=(id:number)=>api<any>(`/journals/${id}/cancel`,{method:"POST"});
+
+
+export type Invoice = {id:number;invoice_number:string;invoice_type:"sales"|"purchase";party_id:number;invoice_date:string;due_date:string|null;description:string;total_amount:string;paid_amount:string;remaining_amount:string;receivable_account_id:number;revenue_account_id:number;journal_entry_id:number|null;status:string;branch_id:number|null};
+export type Payment = {id:number;payment_number:string;payment_type:"receipt"|"payment"|"transfer";party_id:number|null;payment_date:string;amount:string;allocated_amount:string;remaining_amount:string;source_account_id:number;target_account_id:number;description:string;journal_entry_id:number|null;status:string;branch_id:number|null};
+export const getInvoices=(params?:{invoice_type?:string;party_id?:number;outstanding_only?:boolean})=>api<Invoice[]>(`/ar-ap/invoices?${new URLSearchParams(Object.entries(params??{}).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)])).toString()}`);
+export const createInvoice=(payload:any)=>api<Invoice>("/ar-ap/invoices",{method:"POST",body:JSON.stringify(payload)});
+export const postInvoice=(id:number)=>api<Invoice>(`/ar-ap/invoices/${id}/post`,{method:"POST"});
+export const cancelInvoice=(id:number)=>api<Invoice>(`/ar-ap/invoices/${id}/cancel`,{method:"POST"});
+export const getPayments=(params?:{payment_type?:string;party_id?:number})=>api<Payment[]>(`/ar-ap/payments?${new URLSearchParams(Object.entries(params??{}).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)])).toString()}`);
+export const createPayment=(payload:any)=>api<Payment>("/ar-ap/payments",{method:"POST",body:JSON.stringify(payload)});
+export const postPayment=(id:number)=>api<Payment>(`/ar-ap/payments/${id}/post`,{method:"POST"});
+export const cancelPayment=(id:number)=>api<Payment>(`/ar-ap/payments/${id}/cancel`,{method:"POST"});
+export const allocatePayment=(id:number,invoice_id:number,amount:number)=>api<any>(`/ar-ap/payments/${id}/allocate`,{method:"POST",body:JSON.stringify({invoice_id,amount})});
+export const getAging=(invoice_type:"sales"|"purchase")=>api<any>(`/ar-ap/aging?invoice_type=${invoice_type}`);
