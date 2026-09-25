@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.accounting.journal_service import create_journal, _resolve_period
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
+from app.models.account import Account
+from app.models.accounting_dimension import AccountingDimension
 from app.models.audit_log import AuditLog
 from app.models.journal import JournalEntry
 from app.models.user import User
@@ -129,6 +131,18 @@ def post_manual_journal(
         credit = sum((Decimal(str(line.credit or 0)) for line in entry.lines), Decimal("0"))
         if debit != credit or debit <= 0:
             raise ValueError("القيد غير متوازن أو قيمته غير صالحة")
+        for line in entry.lines:
+            account = db.get(Account, line.account_id)
+            if not account or not account.is_active:
+                raise ValueError("لا يمكن ترحيل القيد: أحد الحسابات غير موجود أو غير نشط")
+            if entry.branch_id is not None and account.branch_id not in (None, entry.branch_id):
+                raise ValueError("لا يمكن ترحيل القيد: أحد الحسابات تابع لفرع آخر")
+            if line.dimension_id is not None:
+                dimension = db.get(AccountingDimension, line.dimension_id)
+                if not dimension or not dimension.is_active:
+                    raise ValueError("لا يمكن ترحيل القيد: أحد الأبعاد المحاسبية غير نشط")
+                if entry.branch_id is not None and dimension.branch_id not in (None, entry.branch_id):
+                    raise ValueError("لا يمكن ترحيل القيد: أحد الأبعاد المحاسبية تابع لفرع آخر")
         entry.status = "posted"
         entry.posted_at = datetime.utcnow()
         db.add(AuditLog(
