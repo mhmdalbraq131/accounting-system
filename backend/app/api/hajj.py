@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal
+from app.accounting.journal_service import create_journal, resolve_reversal_date
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
@@ -151,7 +151,7 @@ def cancel_hajj_booking(booking_id:int,db:Session=Depends(get_db),user:User=Depe
     if booking.journal_entry_id:
         original=db.get(__import__("app.models.journal",fromlist=["JournalEntry"]).JournalEntry,booking.journal_entry_id)
         if not original:raise HTTPException(409,"القيد المرتبط بالحجز غير موجود")
-        try:create_journal(db,entry_number=f"REV-HAJJ-BOOK-{booking.id}",entry_date=date.today(),description=f"عكس حجز الحج #{booking.id}",lines=[{"account_id":l.account_id,"debit":l.credit,"credit":l.debit} for l in original.lines],created_by=user.id,branch_id=booking.branch_id,status="posted")
+        try:create_journal(db,entry_number=f"REV-HAJJ-BOOK-{booking.id}",entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),description=f"عكس حجز الحج #{booking.id}",lines=[{"account_id":l.account_id,"debit":l.credit,"credit":l.debit} for l in original.lines],created_by=user.id,branch_id=booking.branch_id,status="posted")
         except ValueError as exc:db.rollback();raise HTTPException(400,str(exc))
     if booking.quota_id:
         quota=db.get(HajjQuota,booking.quota_id)
@@ -219,6 +219,6 @@ def cancel_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Dep
     if booking.journal_entry_id:
         original=db.get(__import__("app.models.journal",fromlist=["JournalEntry"]).JournalEntry,booking.journal_entry_id)
         if not original:raise HTTPException(409,"القيد المرتبط بالحجز غير موجود")
-        try:create_journal(db,entry_number=f"REV-UMRAH-BOOK-{booking.id}",entry_date=date.today(),description=f"عكس حجز العمرة #{booking.id}",lines=[{"account_id":l.account_id,"debit":l.credit,"credit":l.debit} for l in original.lines],created_by=user.id,branch_id=booking.branch_id,status="posted")
+        try:create_journal(db,entry_number=f"REV-UMRAH-BOOK-{booking.id}",entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),description=f"عكس حجز العمرة #{booking.id}",lines=[{"account_id":l.account_id,"debit":l.credit,"credit":l.debit} for l in original.lines],created_by=user.id,branch_id=booking.branch_id,status="posted")
         except ValueError as exc:db.rollback();raise HTTPException(400,str(exc))
     booking.status="cancelled";db.commit();db.refresh(booking);return booking
