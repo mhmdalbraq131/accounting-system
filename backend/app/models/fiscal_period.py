@@ -1,5 +1,5 @@
 from datetime import date
-from sqlalchemy import Boolean, Date, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -12,4 +12,4 @@ class FiscalPeriod(Base):
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True, index=True)
