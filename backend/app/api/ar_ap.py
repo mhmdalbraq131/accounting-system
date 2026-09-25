@@ -12,6 +12,7 @@ from app.models.account import Account
 from app.models.ar_ap import Invoice, Payment, PaymentAllocation
 from app.models.audit_log import AuditLog
 from app.models.fiscal_period import FiscalPeriod
+from app.models.journal import JournalEntry
 from app.models.party import Party
 from app.models.user import User
 
@@ -148,6 +149,9 @@ def cancel_invoice(invoice_id:int,db:Session=Depends(get_db),user:User=Depends(g
     if x.status not in ("draft","posted"): raise HTTPException(400,"الفاتورة ملغاة مسبقًا")
     if x.paid_amount>0: raise HTTPException(400,"لا يمكن إلغاء فاتورة عليها مدفوعات؛ اعكس المدفوع أولًا")
     if x.status=="posted":
+        original=db.get(JournalEntry,x.journal_entry_id) if x.journal_entry_id else None
+        if not original:
+            raise HTTPException(409,"القيد المرتبط بالفاتورة غير موجود")
         ar=_account(db,x.receivable_account_id,user); income=_account(db,x.revenue_account_id,user)
         debit,credit=(ar.id,income.id) if x.invoice_type=="purchase" else (income.id,ar.id)
         try:
@@ -269,6 +273,9 @@ def cancel_payment(payment_id:int,db:Session=Depends(get_db),user:User=Depends(g
     if x.status not in ("draft","posted"): raise HTTPException(400,"الدفعة ملغاة مسبقًا")
     if x.allocated_amount>0: raise HTTPException(400,"لا يمكن إلغاء دفعة مخصصة لفواتير؛ عكس التخصيص أولًا")
     if x.status=="posted":
+        original=db.get(JournalEntry,x.journal_entry_id) if x.journal_entry_id else None
+        if not original:
+            raise HTTPException(409,"القيد المرتبط بالدفعة غير موجود")
         source=_account(db,x.source_account_id,user); target=_account(db,x.target_account_id,user)
         if x.payment_type=="receipt":
             debit_account, credit_account = target.id, source.id
