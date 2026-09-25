@@ -226,6 +226,7 @@ def trial_balance(
         if to_date:
             stmt = stmt.where(JournalEntry.entry_date <= to_date)
         if from_date:
+            stmt = stmt.where(JournalEntry.entry_date >= from_date)
             pre_stmt = (
                 select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
                 .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
@@ -416,7 +417,6 @@ def party_report(
     credit_total = Decimal("0")
     opening_balance = Decimal(str(party.account_id and (db.get(Account, party.account_id).opening_balance or 0) or 0))
     if from_date:
-        pre_party = stmt.where(JournalEntry.entry_date < from_date)
         pre_debit, pre_credit = db.execute(
             select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
             .select_from(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
