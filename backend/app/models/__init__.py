@@ -16,11 +16,12 @@ from app.models.user import User
 from app.models.voucher import Voucher
 from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
+from app.models.ar_ap import Invoice, Payment, PaymentAllocation
 
 __all__ = [
     "Account", "AccountingDimension", "AuditLog", "Branch", "Expense", "FiscalPeriod",
     "FinancialAccount", "JournalEntry", "JournalLine", "Party", "Permission", "Role",
     "RolePermission", "UserRole", "User", "Voucher", "SystemSetting", "TravelProgram",
     "Pilgrim", "ProgramBooking", "VisaService", "HajjQuota", "ServiceOrder",
-    "Currency", "ExchangeRate",
+    "Currency", "ExchangeRate", "Invoice", "Payment", "PaymentAllocation",
 ]
