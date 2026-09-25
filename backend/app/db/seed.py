@@ -21,8 +21,10 @@ _load_env_file()
 
 DEFAULT_PERMISSIONS = [
     ("accounts.view", "عرض الحسابات"),
-    ("accounts.create",
-        "parties.create", "parties.update", "parties.disable", "إضافة الحسابات"),
+    ("accounts.create", "إضافة الحسابات"),
+    ("parties.create", "إضافة الأطراف"),
+    ("parties.update", "تعديل الأطراف"),
+    ("parties.disable", "تعطيل الأطراف"),
     ("vouchers.view", "عرض السندات"),
     ("vouchers.create", "إضافة السندات"),
     ("vouchers.post", "ترحيل السندات"),
