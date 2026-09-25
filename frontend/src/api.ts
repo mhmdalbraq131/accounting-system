@@ -148,3 +148,5 @@ export const allocatePayment=(id:number,invoice_id:number,amount:number)=>api<an
 export const getAging=(invoice_type:"sales"|"purchase")=>api<any>(`/ar-ap/aging?invoice_type=${invoice_type}`);
 
 export const getServiceProfitability=(params?:{service_type?:string;from_date?:string;to_date?:string})=>api<any>(`/reports/service-profitability?${new URLSearchParams(Object.entries(params??{}).filter(([,v])=>v).map(([k,v])=>[k,String(v)])).toString()}`);
+
+export const reversePaymentAllocation=(paymentId:number,allocationId:number)=>api<any>(`/ar-ap/payments/${paymentId}/allocate/${allocationId}/reverse`,{method:"POST"});
