@@ -58,12 +58,17 @@ def _account_setting(db: Session, user: User, service_type: str, kind: str) -> A
         try: account = db.get(Account, int(raw))
         except ValueError: raise HTTPException(400, f"إعداد {prefix} غير صالح")
     if account is None:
-        stmt = select(Account).where(Account.account_type == expected, Account.is_active.is_(True))
+        account_types = ["revenue"] if kind == "revenue" else ["expense", "cost_of_service"]
+        stmt = select(Account).where(Account.account_type.in_(account_types), Account.is_active.is_(True))
         if user.branch_id is not None: stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
         candidates = list(db.scalars(stmt.order_by(Account.code)))
         if len(candidates) != 1: raise HTTPException(400, f"اضبط حساب {prefix} {kind} في الإعدادات")
         account = candidates[0]
-    if account.account_type != expected or not account.is_active: raise HTTPException(400, f"حساب {prefix} غير صالح")
+    if kind == "cost":
+        if account.account_type not in {"expense", "cost_of_service"} or not account.is_active:
+            raise HTTPException(400, f"حساب {prefix} غير صالح")
+    elif account.account_type != expected or not account.is_active:
+        raise HTTPException(400, f"حساب {prefix} غير صالح")
     _scope(user, account.branch_id); return account
 
 
