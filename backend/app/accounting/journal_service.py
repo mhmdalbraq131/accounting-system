@@ -50,6 +50,10 @@ def resolve_reversal_date(db: Session, original_date, branch_id: int | None):
     """Return an open fiscal-period date suitable for reversing a posted entry."""
     from datetime import date
 
+    configured = db.scalar(select(FiscalPeriod.id).limit(1))
+    if configured is None:
+        return original_date
+
     today = date.today()
     candidates = list(db.scalars(
         select(FiscalPeriod).where(
@@ -58,6 +62,11 @@ def resolve_reversal_date(db: Session, original_date, branch_id: int | None):
             FiscalPeriod.end_date >= original_date,
         ).order_by(FiscalPeriod.start_date)
     ))
+    for period in candidates:
+        if period.start_date <= original_date <= period.end_date:
+            if period.start_date <= today <= period.end_date:
+                return today
+            return original_date
     for period in candidates:
         if period.start_date <= today <= period.end_date:
             return today
