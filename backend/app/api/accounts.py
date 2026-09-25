@@ -26,6 +26,7 @@ class AccountOut(AccountCreate):
 
 @router.get("", response_model=list[AccountOut])
 def list_accounts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "accounts.view", db)
     stmt = select(Account).order_by(Account.code)
     if user.branch_id is not None: stmt = stmt.where((Account.branch_id == user.branch_id) | (Account.branch_id.is_(None)))
     return list(db.scalars(stmt))
