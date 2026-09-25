@@ -4,3 +4,30 @@
 @media print{.sidebar,.topbar,.primary,.link,.form-grid{display:none!important}.content{width:100%;margin:0}.page{padding:0}.panel{border:0}.report-print{border:0}}
 .login-shell{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#111827,#263449);padding:20px}.login-card{width:min(420px,100%);background:#fff;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(0,0,0,.18);text-align:right}.login-card .brand-mark{margin:0 auto 16px}.login-card h1{text-align:center;margin:0;font-size:23px}.login-card>p{text-align:center;color:#7a8492;font-size:12px;margin:7px 0 25px}.login-card label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#657080;margin-bottom:14px}.login-card input{border:1px solid #dfe4ea;border-radius:9px;padding:12px;font:inherit;outline:none}.login-card input:focus{border-color:#d0aa62}.login-card button{width:100%;margin-top:5px}
 .workspace-layout{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:18px;align-items:start;padding:20px 28px 36px;max-width:1700px;margin:0 auto}.workspace-main{min-width:0}.system-tree{position:sticky;top:18px;padding:0;overflow:hidden;max-height:calc(100vh - 130px)}.tree-head{padding:18px 18px 14px;border-bottom:1px solid #edf0f3}.tree-head h3{margin:6px 0 4px;font-size:16px}.tree-head p{margin:0;color:#8b95a2;font-size:10px;line-height:1.8}.tree-body{padding:10px 8px 14px;overflow:auto;max-height:calc(100vh - 250px)}.tree-row{width:100%;border:0;background:transparent;color:#566273;display:flex;align-items:center;gap:7px;padding-top:8px;padding-bottom:8px;border-radius:7px;text-align:right;font:inherit;font-size:11px;cursor:pointer}.tree-row:hover{background:#f4f6f9;color:#18212f}.tree-row.active{background:#eef3f9;color:#203a63;font-weight:800}.tree-caret{width:14px;color:#9aa4b2;font-weight:800}.tree-node>.tree-node{border-right:1px solid #e7ebf0;margin-right:10px}.workspace-main .page{padding:0;max-width:none}@media(max-width:1050px){.workspace-layout{grid-template-columns:210px minmax(0,1fr);padding:16px}.tree-row{font-size:10px}}@media(max-width:760px){.workspace-layout{display:block;padding:12px}.system-tree{position:relative;top:auto;max-height:none;margin-bottom:14px}.tree-body{max-height:none}.workspace-main .page{padding:0}}
+
+/* UI stability and action states */
+.content{width:100%;margin-right:0;min-width:0}
+.sidebar{display:none}
+.workspace-layout{width:100%;min-width:0}
+.workspace-main{min-width:0;overflow-x:hidden}
+.panel{min-width:0}
+.form-grid>*{min-width:0}
+.form-grid input,.form-grid select,.form-grid textarea{max-width:100%}
+button{font-family:inherit}
+button:disabled{cursor:not-allowed}
+.secondary{border:1px solid #dfe4ea;background:#fff;color:#334155;padding:9px 13px;border-radius:8px;cursor:pointer;font:inherit}
+.secondary:hover:not(:disabled){background:#f8f9fb;border-color:#cbd5e1}
+.secondary:disabled{opacity:.6}
+.danger{border:1px solid #efcaca;background:#fff7f7;color:#a33;padding:9px 13px;border-radius:8px;cursor:pointer;font:inherit}
+.danger:hover:not(:disabled){background:#fff0f0}
+.notice-banner,.notice{margin:14px 0;padding:11px 14px;background:#f3f7ff;border:1px solid #d7e3f5;color:#29476d;border-radius:8px;font-size:12px}
+.page-stack{display:grid;gap:18px}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.card{background:#fff;border:1px solid #e7eaf0;border-radius:12px;padding:18px}
+.card h3{margin:0 0 14px;font-size:14px}
+.card label{display:flex;flex-direction:column;gap:7px;color:#657080;font-size:11px;margin-bottom:12px}
+.card input,.card select{border:1px solid #dfe4ea;border-radius:8px;padding:10px;background:#fff;color:#18212f;font:inherit}
+.quick-btn.active{border-color:#d9b66f;background:#fffaf0}
+.form-actions{gap:9px;flex-wrap:wrap}
+.workspace-main .page{overflow-x:hidden}
+@media(max-width:760px){.workspace-layout{padding:10px}.grid-2{grid-template-columns:1fr}.system-tree{margin-bottom:10px}.tree-head{padding:14px}.panel{padding:14px}.table-wrap{max-width:100%}.form-grid{grid-template-columns:1fr}.form-actions{justify-content:stretch}.form-actions button{flex:1 1 auto}}
