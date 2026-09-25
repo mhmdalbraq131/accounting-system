@@ -203,7 +203,7 @@ def post_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Depen
     supplier=_party(db,user,booking.supplier_id,{"supplier","both"},"مورد العمرة","liability");revenue=_setting_account(db,user,"travel_revenue_account_id","revenue","إيراد الحج والعمرة")
     lines=[{"account_id":counterparty.account_id,"debit":booking.sale_price,"credit":Decimal("0"),"description":f"استحقاق خدمة عمرة #{booking.id}"},{"account_id":revenue.id,"debit":Decimal("0"),"credit":booking.sale_price,"description":f"إيراد العمرة للحجز #{booking.id}"}]
     if booking.supplier_cost>0:
-        cost_account=_setting_account(db,user,"travel_cost_account_id","expense","تكلفة الحج والعمرة")
+        cost_account=_setting_account(db,user,"travel_cost_account_id","cost_of_service","تكلفة الحج والعمرة")
         lines.extend([{"account_id":cost_account.id,"debit":booking.supplier_cost,"credit":Decimal("0"),"description":f"تكلفة عمرة #{booking.id}"},{"account_id":supplier.account_id,"debit":Decimal("0"),"credit":booking.supplier_cost,"description":f"مستحق مورد العمرة #{booking.id}"}])
     entry=create_journal(db,entry_number=f"UMRAH-BOOK-{booking.id}",entry_date=booking.booked_at.date(),description=f"ترحيل خدمة عمرة للحجز #{booking.id}",lines=lines,created_by=user.id,branch_id=booking.branch_id,status="posted")
     booking.journal_entry_id=entry.id;booking.status="posted";db.commit();db.refresh(booking);return booking
