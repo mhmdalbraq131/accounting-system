@@ -227,8 +227,14 @@ def allocate_payment(payment_id:int,payload:AllocationCreate,db:Session=Depends(
     if p.party_id != inv.party_id: raise HTTPException(400,"الدفعة والفاتورة تخصان طرفين مختلفين")
     if payload.amount>p.remaining_amount: raise HTTPException(400,"المبلغ يتجاوز الرصيد غير المخصص للدفعة")
     if payload.amount>inv.remaining_amount: raise HTTPException(400,"المبلغ يتجاوز المتبقي على الفاتورة")
+    if p.payment_type=="transfer":
+        raise HTTPException(400,"لا يمكن تخصيص التحويلات إلى فواتير")
     if p.payment_type=="receipt" and inv.invoice_type!="sales": raise HTTPException(400,"سند القبض يخصص لفاتورة مبيعات")
     if p.payment_type=="payment" and inv.invoice_type!="purchase": raise HTTPException(400,"سند الصرف يخصص لفاتورة مشتريات")
+    if p.payment_type=="receipt" and p.source_account_id != inv.receivable_account_id:
+        raise HTTPException(400,"حساب الذمم في سند القبض لا يطابق حساب الفاتورة")
+    if p.payment_type=="payment" and p.target_account_id != inv.receivable_account_id:
+        raise HTTPException(400,"حساب الذمم في سند الصرف لا يطابق حساب الفاتورة")
     db.add(PaymentAllocation(payment_id=p.id,invoice_id=inv.id,amount=payload.amount))
     p.allocated_amount += payload.amount; p.remaining_amount -= payload.amount
     inv.paid_amount += payload.amount; inv.remaining_amount -= payload.amount
