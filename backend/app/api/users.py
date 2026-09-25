@@ -140,6 +140,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     db.execute(delete(UserRole).where(UserRole.user_id == user_id))
     if payload.role_id is not None:
         db.add(UserRole(user_id=user_id, role_id=payload.role_id))
+    db.add(AuditLog(user_id=current_user.id, action="update", entity_type="user", entity_id=target.id))
     db.commit()
     db.refresh(target)
     return _user_out(target, db)
