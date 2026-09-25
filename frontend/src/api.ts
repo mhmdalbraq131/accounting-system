@@ -111,6 +111,8 @@ export const postVisa=(id:number)=>api<VisaService>(`/travel/visas/${id}/post`,{
 export const cancelVisa=(id:number)=>api<VisaService>(`/travel/visas/${id}/cancel`,{method:"POST"});
 export const getExpenses=()=>api<any[]>("/expenses");
 export const createExpense=(payload:any)=>api<any>("/expenses",{method:"POST",body:JSON.stringify(payload)});
+export const postExpense=(id:number)=>api<any>(`/expenses/${id}/post`,{method:"POST"});
+export const cancelExpense=(id:number)=>api<any>(`/expenses/${id}/cancel`,{method:"POST"});
 export const login=(username:string,password:string)=>api<{access_token:string;token_type:string}>("/auth/login",{method:"POST",body:JSON.stringify({username,password})});
 
 
