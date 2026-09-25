@@ -269,7 +269,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
         if not program or program.supplier_id is None:
             raise HTTPException(400, "يجب تحديد مورد البرنامج قبل ترحيل تكلفة الحجز")
         supplier_account = _party_account(db, user, program.supplier_id, {"supplier", "both"}, "المورد")
-        cost_account = _resolve_account(db, user, "travel_cost_account_id", "expense", "تكلفة برامج الحج والعمرة")
+        cost_account = _resolve_account(db, user, "travel_cost_account_id", "cost_of_service", "تكلفة برامج الحج والعمرة")
 
     entry = _post_service_journal(
         db,
@@ -375,7 +375,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
     cost_account = None
     if visa.supplier_cost > 0:
         supplier_account = _party_account(db, user, visa.supplier_id, {"supplier", "both"}, "المورد")
-        cost_account = _resolve_account(db, user, "visa_cost_account_id", "expense", "تكلفة خدمات التأشيرات")
+        cost_account = _resolve_account(db, user, "visa_cost_account_id", "cost_of_service", "تكلفة خدمات التأشيرات")
 
     entry = _post_service_journal(
         db,
