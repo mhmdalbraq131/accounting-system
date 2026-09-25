@@ -85,6 +85,7 @@ def update_role_permissions(role_id: int, payload: RolePermissionsUpdate, db: Se
         raise HTTPException(400, f"صلاحيات غير معروفة: {', '.join(missing)}")
     db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
     db.add_all([RolePermission(role_id=role_id, permission_id=p.id) for p in permissions])
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="role_permissions", entity_id=role.id))
     db.commit()
     return {"role_id": role_id, "permission_codes": sorted(p.code for p in permissions)}
 
