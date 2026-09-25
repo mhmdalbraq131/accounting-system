@@ -8,7 +8,7 @@ export default function AccountingControlsPage(){
   const [code,setCode]=useState(""); const [name,setName]=useState("");
   const [periodName,setPeriodName]=useState(""); const [start,setStart]=useState(""); const [end,setEnd]=useState("");
   const [error,setError]=useState("");
-  async function load(){try{const [d,p,l]=await Promise.all([getAccountingDimensions(),getFiscalPeriods(),getAuditLogs(100)]);setDimensions(d);setPeriods(p);setLogs(l);setError("")}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل الضبط المحاسبي")}}
+  async function load(){setError(""); const results=await Promise.allSettled([getAccountingDimensions(),getFiscalPeriods(),getAuditLogs(100)]); const [d,p,l]=results; if(d.status==="fulfilled")setDimensions(d.value); if(p.status==="fulfilled")setPeriods(p.value); if(l.status==="fulfilled")setLogs(l.value); const failed=results.find(x=>x.status==="rejected") as PromiseRejectedResult|undefined; if(failed)setError(failed.reason instanceof Error?failed.reason.message:"تعذر تحميل بعض بيانات الضبط المحاسبي")}
   useEffect(()=>{load()},[]);
   async function addDimension(e:React.FormEvent){e.preventDefault();try{await createAccountingDimension({dimension_type:"cost_center",code,name_ar:name});setCode("");setName("");await load()}catch(e){setError(e instanceof Error?e.message:"تعذر إضافة البعد")}}
   async function addPeriod(e:React.FormEvent){e.preventDefault();try{await createFiscalPeriod({name:periodName,start_date:start,end_date:end});setPeriodName("");setStart("");setEnd("");await load()}catch(e){setError(e instanceof Error?e.message:"تعذر إضافة الفترة")}}
