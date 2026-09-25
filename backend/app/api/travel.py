@@ -75,13 +75,15 @@ def _resolve_account(db: Session, user: User, key: str, account_type: str, label
         account = db.get(Account, account_id)
         if not account or not account.is_active:
             raise HTTPException(400, f"{label} المحدد في الإعدادات غير موجود أو غير نشط")
-        if account.account_type != account_type:
+        allowed_types = {"expense", "cost_of_service"} if account_type == "cost_of_service" else {account_type}
+        if account.account_type not in allowed_types:
             raise HTTPException(400, f"حساب {label} يجب أن يكون من نوع {account_type}")
         if not _branch_allowed(user, account.branch_id):
             raise HTTPException(403, f"{label} تابع لفرع آخر")
         return account
 
-    stmt = select(Account).where(Account.account_type == account_type, Account.is_active.is_(True))
+    account_types = ["expense", "cost_of_service"] if account_type == "cost_of_service" else [account_type]
+    stmt = select(Account).where(Account.account_type.in_(account_types), Account.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     candidates = list(db.scalars(stmt.order_by(Account.code)))
