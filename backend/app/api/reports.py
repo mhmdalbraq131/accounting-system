@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
 from app.models.expense import Expense
@@ -45,6 +45,7 @@ def financial_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     # The summary is intentionally based on posted accounting entries.
     base = select(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).join(Account, JournalLine.account_id == Account.id)
     base = base.where(JournalEntry.status == "posted")
@@ -98,6 +99,7 @@ def journal_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     entries = db.scalars(_posted_entries(db, user, from_date, to_date)).all()
     return [
         {
@@ -130,6 +132,7 @@ def ledger_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     account = db.get(Account, account_id)
     if not account or not account.is_active:
         raise HTTPException(404, "الحساب غير موجود أو غير نشط")
@@ -191,6 +194,7 @@ def trial_balance(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     accounts_stmt = select(Account).where(Account.is_active.is_(True))
     if user.branch_id is not None:
         accounts_stmt = accounts_stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
