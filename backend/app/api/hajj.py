@@ -188,7 +188,7 @@ def create_umrah_booking(payload:UmrahBookingCreate,db:Session=Depends(get_db),u
     if payload.agent_id is not None and payload.customer_id is not None:raise HTTPException(400,"لا يجتمع الوكيل والعميل المباشر في نفس الخدمة")
     if payload.agent_id is None and payload.customer_id is None:raise HTTPException(400,"يجب تحديد الوكيل أو العميل المباشر")
     booking=ProgramBooking(program_id=program.id,pilgrim_id=pilgrim.id,customer_id=payload.customer_id,agent_id=payload.agent_id,supplier_id=payload.supplier_id,sale_price=payload.sale_price,supplier_cost=payload.supplier_cost,paid_amount=Decimal("0"),remaining_amount=payload.sale_price,profit=payload.sale_price-payload.supplier_cost,customer_type="agency" if payload.agent_id else "direct",status="reserved",branch_id=user.branch_id)
-    db.add(booking);db.commit();db.refresh(booking);return booking
+    db.add(booking);db.flush();db.add(AuditLog(user_id=user.id,action="create",entity_type="program_booking",entity_id=booking.id,details=f"إنشاء حجز عمرة #{booking.id}"));db.commit();db.refresh(booking);return booking
 
 @umrah_router.post("/bookings/{booking_id}/post")
 def post_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
@@ -206,7 +206,7 @@ def post_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Depen
         cost_account=_setting_account(db,user,"travel_cost_account_id","cost_of_service","تكلفة الحج والعمرة")
         lines.extend([{"account_id":cost_account.id,"debit":booking.supplier_cost,"credit":Decimal("0"),"description":f"تكلفة عمرة #{booking.id}"},{"account_id":supplier.account_id,"debit":Decimal("0"),"credit":booking.supplier_cost,"description":f"مستحق مورد العمرة #{booking.id}"}])
     entry=create_journal(db,entry_number=f"UMRAH-BOOK-{booking.id}",entry_date=booking.booked_at.date(),description=f"ترحيل خدمة عمرة للحجز #{booking.id}",lines=lines,created_by=user.id,branch_id=booking.branch_id,status="posted")
-    booking.journal_entry_id=entry.id;booking.status="posted";db.commit();db.refresh(booking);return booking
+    booking.journal_entry_id=entry.id;booking.status="posted";db.add(AuditLog(user_id=user.id,action="post",entity_type="program_booking",entity_id=booking.id,details=f"ترحيل حجز العمرة #{booking.id}"));db.commit();db.refresh(booking);return booking
 
 @umrah_router.post("/bookings/{booking_id}/cancel")
 def cancel_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
@@ -221,4 +221,4 @@ def cancel_umrah_booking(booking_id:int,db:Session=Depends(get_db),user:User=Dep
         if not original:raise HTTPException(409,"القيد المرتبط بالحجز غير موجود")
         try:create_journal(db,entry_number=f"REV-UMRAH-BOOK-{booking.id}",entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),description=f"عكس حجز العمرة #{booking.id}",lines=[{"account_id":l.account_id,"debit":l.credit,"credit":l.debit} for l in original.lines],created_by=user.id,branch_id=booking.branch_id,status="posted")
         except ValueError as exc:db.rollback();raise HTTPException(400,str(exc))
-    booking.status="cancelled";db.commit();db.refresh(booking);return booking
+    booking.status="cancelled";db.add(AuditLog(user_id=user.id,action="cancel",entity_type="program_booking",entity_id=booking.id,details=f"إلغاء حجز العمرة #{booking.id}"));db.commit();db.refresh(booking);return booking
