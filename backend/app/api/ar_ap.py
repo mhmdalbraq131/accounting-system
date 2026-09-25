@@ -174,9 +174,13 @@ def post_payment(payment_id:int,db:Session=Depends(get_db),user:User=Depends(get
     if not _branch_ok(user,x.branch_id): raise HTTPException(403,"الدفعة تابعة لفرع آخر")
     if x.status!="draft": raise HTTPException(400,"لا يمكن ترحيل الدفعة بهذه الحالة")
     source=_account(db,x.source_account_id,user); target=_account(db,x.target_account_id,user)
+    if x.payment_type=="receipt":
+        debit_account, credit_account = source.id, target.id
+    else:
+        debit_account, credit_account = target.id, source.id
     try:
         je=create_journal(db,entry_number=f"PAY-{x.payment_number}",entry_date=x.payment_date,description=x.description,created_by=user.id,branch_id=x.branch_id,status="posted",
-                          lines=[{"account_id":target.id,"debit":x.amount,"credit":0},{"account_id":source.id,"debit":0,"credit":x.amount}])
+                          lines=[{"account_id":debit_account,"debit":x.amount,"credit":0},{"account_id":credit_account,"debit":0,"credit":x.amount}])
     except (ValueError,UnbalancedJournalError) as exc: raise HTTPException(400,str(exc))
     x.journal_entry_id=je.id; x.status="posted"
     db.add(AuditLog(user_id=user.id,action="post",entity_type="payment",entity_id=x.id,details=json.dumps({"journal_entry_id":je.id},ensure_ascii=False)))
@@ -211,10 +215,14 @@ def cancel_payment(payment_id:int,db:Session=Depends(get_db),user:User=Depends(g
     if x.allocated_amount>0: raise HTTPException(400,"لا يمكن إلغاء دفعة مخصصة لفواتير؛ عكس التخصيص أولًا")
     if x.status=="posted":
         source=_account(db,x.source_account_id,user); target=_account(db,x.target_account_id,user)
+        if x.payment_type=="receipt":
+            debit_account, credit_account = target.id, source.id
+        else:
+            debit_account, credit_account = source.id, target.id
         try:
             create_journal(db,entry_number=f"REV-PAY-{x.payment_number}",entry_date=date.today(),description=f"عكس الدفعة {x.payment_number}",
                            created_by=user.id,branch_id=x.branch_id,status="posted",
-                           lines=[{"account_id":source.id,"debit":x.amount,"credit":0},{"account_id":target.id,"debit":0,"credit":x.amount}])
+                           lines=[{"account_id":debit_account,"debit":x.amount,"credit":0},{"account_id":credit_account,"debit":0,"credit":x.amount}])
         except (ValueError,UnbalancedJournalError) as exc: raise HTTPException(400,str(exc))
     x.status="cancelled"
     db.add(AuditLog(user_id=user.id,action="cancel",entity_type="payment",entity_id=x.id,details=json.dumps({"payment_number":x.payment_number},ensure_ascii=False)))
