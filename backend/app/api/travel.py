@@ -7,9 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.journal import JournalEntry
 from app.models.party import Party
 from app.models.settings import SystemSetting
@@ -159,6 +160,7 @@ def _post_service_journal(
 
 @router.get("/programs")
 def programs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(TravelProgram).order_by(TravelProgram.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((TravelProgram.branch_id == user.branch_id) | TravelProgram.branch_id.is_(None))
@@ -167,6 +169,7 @@ def programs(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/programs", status_code=201)
 def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     if payload.program_type not in {"umrah", "hajj"}:
         raise HTTPException(400, "نوع البرنامج يجب أن يكون عمرة أو حج")
     if db.scalar(select(TravelProgram).where(TravelProgram.code == payload.code)):
@@ -182,6 +185,7 @@ def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: 
 
 @router.get("/pilgrims")
 def pilgrims(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(Pilgrim).order_by(Pilgrim.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((Pilgrim.branch_id == user.branch_id) | Pilgrim.branch_id.is_(None))
@@ -190,6 +194,7 @@ def pilgrims(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/pilgrims", status_code=201)
 def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     if payload.customer_id is not None:
         _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل")
     pilgrim = Pilgrim(**payload.model_dump(), branch_id=user.branch_id)
@@ -201,6 +206,7 @@ def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: 
 
 @router.get("/bookings")
 def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(ProgramBooking).order_by(ProgramBooking.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((ProgramBooking.branch_id == user.branch_id) | ProgramBooking.branch_id.is_(None))
@@ -209,6 +215,7 @@ def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/bookings", status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     program = db.get(TravelProgram, payload.program_id)
     if not program or not program.is_active or not _branch_allowed(user, program.branch_id):
         raise HTTPException(404, "البرنامج غير موجود أو غير نشط")
@@ -250,6 +257,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
 
 @router.post("/bookings/{booking_id}/post")
 def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.post", db)
     booking = db.get(ProgramBooking, booking_id)
     if not booking:
         raise HTTPException(404, "الحجز غير موجود")
@@ -296,6 +304,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.post("/bookings/{booking_id}/cancel")
 def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.cancel", db)
     booking = db.get(ProgramBooking, booking_id)
     if not booking:
         raise HTTPException(404, "الحجز غير موجود")
@@ -334,6 +343,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
 
 @router.get("/visas")
 def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(VisaService).order_by(VisaService.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((VisaService.branch_id == user.branch_id) | VisaService.branch_id.is_(None))
@@ -342,6 +352,7 @@ def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user))
 
 @router.post("/visas", status_code=201)
 def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل") if payload.customer_id is not None else None
     if payload.supplier_id is not None:
         _party_account(db, user, payload.supplier_id, {"supplier", "both"}, "المورد")
@@ -362,6 +373,7 @@ def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User =
 
 @router.post("/visas/{visa_id}/post")
 def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.post", db)
     visa = db.get(VisaService, visa_id)
     if not visa:
         raise HTTPException(404, "خدمة التأشيرة غير موجودة")
@@ -402,6 +414,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
 
 @router.post("/visas/{visa_id}/cancel")
 def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.cancel", db)
     visa = db.get(VisaService, visa_id)
     if not visa:
         raise HTTPException(404, "خدمة التأشيرة غير موجودة")
