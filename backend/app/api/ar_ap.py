@@ -7,7 +7,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal, UnbalancedJournalError, resolve_reversal_date
-from app.api.deps import get_current_user, get_db, require_permission
+from app.auth import get_current_user, require_permission
+from app.db.session import get_db
 from app.models.account import Account
 from app.models.ar_ap import Invoice, Payment, PaymentAllocation
 from app.models.audit_log import AuditLog
