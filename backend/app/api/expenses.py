@@ -50,11 +50,11 @@ def _validate_account(db: Session, user: User, account_id: int, label: str) -> A
 def _resolve_expense_account(db: Session, user: User, account_id: int | None) -> int:
     if account_id is not None:
         account = _validate_account(db, user, account_id, "حساب المصروف")
-        if account.account_type != "expense":
+        if account.account_type not in {"expense", "cost_of_service"}:
             raise HTTPException(400, "الحساب المختار يجب أن يكون من نوع المصروفات")
         return account.id
 
-    stmt = select(Account).where(Account.account_type == "expense", Account.is_active.is_(True))
+    stmt = select(Account).where(Account.account_type.in_(["expense", "cost_of_service"]), Account.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     candidates = list(db.scalars(stmt.order_by(Account.code)))
