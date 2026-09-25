@@ -18,7 +18,12 @@ DEFAULT_SETTINGS = [
     ("company_address", "", "string", "company", "عنوان الوكالة"),
     ("company_email", "", "string", "company", "البريد الإلكتروني"),
     ("company_website", "", "string", "company", "الموقع الإلكتروني"),
-    ("company_logo_url", "", "string", "company", "رابط/مسار شعار الوكالة"),
+    ("company_whatsapp", "", "string", "company", "رقم واتساب"),
+    ("company_city", "", "string", "company", "المدينة"),
+    ("company_country", "اليمن", "string", "company", "الدولة"),
+    ("commercial_registration_no", "", "string", "company", "رقم السجل التجاري"),
+    ("tax_number", "", "string", "company", "الرقم الضريبي"),
+    ("company_logo_url", "", "string", "company", "شعار المنشأة: رابط صورة أو بيانات صورة مضمّنة"),
     ("print_footer", "شكرًا لثقتكم بنا — نسعد بخدمتكم دائمًا", "string", "company", "عبارة تذييل المستندات المطبوعة"),
     ("print_show_logo", "true", "boolean", "company", "إظهار شعار الوكالة في الطباعة"),
     ("print_show_contact", "true", "boolean", "company", "إظهار بيانات التواصل في الطباعة"),
@@ -47,7 +52,7 @@ DEFAULT_SETTINGS = [
 
 
 class SettingUpdate(BaseModel):
-    value: str = Field(max_length=5000)
+    value: str = Field(max_length=2_000_000)
 
 
 class SettingOut(BaseModel):
@@ -89,6 +94,11 @@ class BrandingOut(BaseModel):
     company_address: str
     company_email: str
     company_website: str
+    company_whatsapp: str
+    company_city: str
+    company_country: str
+    commercial_registration_no: str
+    tax_number: str
     company_logo_url: str
     print_footer: str
     print_show_logo: bool
@@ -104,6 +114,11 @@ def _branding(existing: dict[str, SystemSetting]) -> BrandingOut:
         company_address=value("company_address"),
         company_email=value("company_email"),
         company_website=value("company_website"),
+        company_whatsapp=value("company_whatsapp"),
+        company_city=value("company_city"),
+        company_country=value("company_country", "اليمن"),
+        commercial_registration_no=value("commercial_registration_no"),
+        tax_number=value("tax_number"),
         company_logo_url=value("company_logo_url"),
         print_footer=value("print_footer", "شكرًا لثقتكم بنا — نسعد بخدمتكم دائمًا"),
         print_show_logo=value("print_show_logo", "true").lower() == "true",
