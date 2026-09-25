@@ -1,5 +1,5 @@
 import React,{useState} from "react";
-type ModuleId="hajj"|"umrah"|"flight"|"buses"|"accounts"|"journals"|"expenses"|"accounting_controls"|"settings";
+type ModuleId="hajj"|"umrah"|"flight"|"buses"|"accounts"|"journals"|"expenses"|"ar_ap"|"accounting_controls"|"settings";
 type Node={id:string;label:string;target?:string;children?:Node[]};
 const TREE:Node[]=[
 {id:"hajj",label:"الحج",children:[{id:"h1",label:"التهيئة",children:[{id:"h11",label:"البرامج",target:"البرامج"},{id:"h12",label:"الحصص",target:"الحصص"}]},{id:"h2",label:"المدخلات",children:[{id:"h21",label:"المعتمرون",target:"المعتمرون"},{id:"h22",label:"الوكلاء",target:"الوكلاء"}]},{id:"h3",label:"العمليات",children:[{id:"h31",label:"الحجوزات",target:"الحجوزات"},{id:"h32",label:"التحصيل",target:"التحصيل"}]},{id:"h4",label:"التقارير",children:[{id:"h41",label:"كشف حساب الأطراف",target:"كشف حساب طرف"}]}]},
@@ -9,6 +9,7 @@ const TREE:Node[]=[
 {id:"accounts",label:"الدليل المحاسبي",children:[{id:"a1",label:"تهيئة الأستاذ العام",children:[{id:"a11",label:"دليل الحسابات",target:"دليل الحسابات"}]},{id:"a2",label:"المدخلات",children:[{id:"a21",label:"الموردون",target:"الموردون"},{id:"a22",label:"الصناديق والبنوك والمحافظ",target:"الصناديق والبنوك والمحافظ"}]},{id:"a3",label:"العمليات",children:[{id:"a31",label:"كشف حساب طرف",target:"كشف حساب طرف"},{id:"a32",label:"سداد مستحقات الموردين",target:"سداد مستحقات الموردين"}]},{id:"a4",label:"التقارير",children:[{id:"a41",label:"الملخص المالي",target:"الملخص المالي"},{id:"a42",label:"اليومية",target:"اليومية"},{id:"a43",label:"ميزان المراجعة",target:"ميزان المراجعة"},{id:"a44",label:"الأرباح والخسائر",target:"الأرباح والخسائر"},{id:"a45",label:"الأستاذ العام",target:"الأستاذ العام"}]}]},
 {id:"journals",label:"القيود اليومية",children:[{id:"j1",label:"العمليات",children:[{id:"j11",label:"قيد يومي جديد",target:"قيد يومي جديد"},{id:"j12",label:"ترحيل القيود",target:"القيود المسجلة"}]}]},
 {id:"expenses",label:"المصروفات",children:[{id:"e1",label:"تسجيل المصروفات وترحيلها",target:"إدارة المصروفات"}]},
+{id:"ar_ap",label:"الذمم والمدفوعات",children:[{id:"r1",label:"الفواتير",target:"الفواتير"},{id:"r2",label:"القبض والصرف",target:"المدفوعات"},{id:"r3",label:"أعمار الذمم",target:"أعمار الذمم"}]},
 {id:"accounting_controls",label:"الضبط المحاسبي",children:[{id:"c1",label:"الأبعاد والفترات وسجل التدقيق",target:"الضبط المحاسبي"}]},
 {id:"settings",label:"الإعدادات",children:[{id:"s1",label:"بيانات الوكالة",target:"الإعدادات العامة"},{id:"s2",label:"ربط الحسابات",target:"ربط الحسابات"},{id:"s3",label:"الفروع",target:"الفروع"},{id:"s4",label:"المستخدمون",target:"المستخدمون"},{id:"s5",label:"الأدوار والصلاحيات",target:"الأدوار والصلاحيات"},{id:"s6",label:"العملات",target:"العملات"},{id:"s7",label:"الخدمات الإضافية",target:"الخدمات الإضافية"}]}
 ];
