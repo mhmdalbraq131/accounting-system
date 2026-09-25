@@ -222,9 +222,21 @@ def trial_balance(
         )
         if user.branch_id is not None:
             stmt = stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
-        stmt = apply_dates(stmt, JournalEntry.entry_date, from_date, to_date)
+        if to_date:
+            stmt = stmt.where(JournalEntry.entry_date <= to_date)
+        if from_date:
+            pre_stmt = (
+                select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+                .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+                .where(JournalEntry.status == "posted", JournalLine.account_id == account.id, JournalEntry.entry_date < from_date)
+            )
+            if user.branch_id is not None:
+                pre_stmt = pre_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+            pre_debit, pre_credit = db.execute(pre_stmt).one()
+        else:
+            pre_debit, pre_credit = Decimal("0"), Decimal("0")
         debit, credit = db.execute(stmt).one()
-        net = Decimal(str(account.opening_balance or 0)) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+        net = (Decimal(str(account.opening_balance or 0)) + Decimal(str(pre_debit or 0)) - Decimal(str(pre_credit or 0))) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
         debit_balance = net if net > 0 else Decimal("0")
         credit_balance = -net if net < 0 else Decimal("0")
         total_debit += debit_balance
@@ -321,19 +333,33 @@ def cash_movement(
         )
         if user.branch_id is not None:
             q = q.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
-        q = apply_dates(q, JournalEntry.entry_date, from_date, to_date)
+        if to_date:
+            q = q.where(JournalEntry.entry_date <= to_date)
+        if from_date:
+            opening_q = (
+                select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+                .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+                .where(JournalEntry.status == "posted", JournalLine.account_id == fa.ledger_account_id, JournalEntry.entry_date < from_date)
+            )
+            if user.branch_id is not None:
+                opening_q = opening_q.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+            opening_debit, opening_credit = db.execute(opening_q).one()
+        else:
+            opening_debit, opening_credit = Decimal("0"), Decimal("0")
         debit, credit = db.execute(q).one()
+        configured_opening = Decimal(str(fa.opening_balance or 0))
+        period_opening = configured_opening + Decimal(str(opening_debit or 0)) - Decimal(str(opening_credit or 0))
         movement = Decimal(str(debit or 0)) - Decimal(str(credit or 0))
         rows.append({
             "financial_account_id": fa.id,
             "name": fa.name,
             "account_type": fa.account_type,
             "currency_id": fa.currency_id,
-            "opening_balance": fa.opening_balance,
+            "opening_balance": period_opening,
             "debit": debit,
             "credit": credit,
             "net_movement": movement,
-            "closing_balance": Decimal(str(fa.opening_balance or 0)) + movement,
+            "closing_balance": period_opening + movement,
             "branch_id": fa.branch_id,
         })
     return {
@@ -387,7 +413,17 @@ def party_report(
     rows = []
     debit_total = Decimal("0")
     credit_total = Decimal("0")
-    running = Decimal("0")
+    opening_balance = Decimal(str(party.account_id and (db.get(Account, party.account_id).opening_balance or 0) or 0))
+    if from_date:
+        pre_party = stmt.where(JournalEntry.entry_date < from_date)
+        pre_debit, pre_credit = db.execute(
+            select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+            .select_from(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id, JournalEntry.entry_date < from_date,
+                   *([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
+        ).one()
+        opening_balance += Decimal(str(pre_debit or 0)) - Decimal(str(pre_credit or 0))
+    running = opening_balance
     for line, entry in db.execute(stmt).all():
         debit_total += Decimal(str(line.debit))
         credit_total += Decimal(str(line.credit))
