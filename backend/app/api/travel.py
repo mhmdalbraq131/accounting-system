@@ -178,6 +178,8 @@ def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: 
         _party_account(db, user, payload.supplier_id, {"supplier", "both"}, "المورد")
     program = TravelProgram(**payload.model_dump(), branch_id=user.branch_id)
     db.add(program)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="travel_program", entity_id=program.id, details=f"إنشاء برنامج {program.name_ar}"))
     db.commit()
     db.refresh(program)
     return program
@@ -199,6 +201,8 @@ def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: 
         _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل")
     pilgrim = Pilgrim(**payload.model_dump(), branch_id=user.branch_id)
     db.add(pilgrim)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="pilgrim", entity_id=pilgrim.id, details=f"إنشاء مستفيد {pilgrim.full_name}"))
     db.commit()
     db.refresh(pilgrim)
     return pilgrim
@@ -250,6 +254,8 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
         status="reserved",
     )
     db.add(booking)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="program_booking", entity_id=booking.id, details=f"إنشاء حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -297,6 +303,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
     )
     booking.journal_entry_id = entry.id
     booking.status = "confirmed"
+    db.add(AuditLog(user_id=user.id, action="post", entity_type="program_booking", entity_id=booking.id, details=f"ترحيل حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -336,6 +343,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400, str(exc))
     reversal.posted_at = datetime.utcnow()
     booking.status = "cancelled"
+    db.add(AuditLog(user_id=user.id, action="cancel", entity_type="program_booking", entity_id=booking.id, details=f"إلغاء حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -366,6 +374,8 @@ def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User =
         status="pending",
     )
     db.add(visa)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="visa_service", entity_id=visa.id, details=f"إنشاء خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa
@@ -407,6 +417,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
     )
     visa.journal_entry_id = entry.id
     visa.status = "approved"
+    db.add(AuditLog(user_id=user.id, action="post", entity_type="visa_service", entity_id=visa.id, details=f"ترحيل خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa
@@ -446,6 +457,7 @@ def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depend
         raise HTTPException(400, str(exc))
     reversal.posted_at = datetime.utcnow()
     visa.status = "cancelled"
+    db.add(AuditLog(user_id=user.id, action="cancel", entity_type="visa_service", entity_id=visa.id, details=f"إلغاء خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa
