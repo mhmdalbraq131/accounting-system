@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
@@ -68,6 +68,7 @@ def list_currencies(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 @router.post("", status_code=201)
 def create_currency(payload: CurrencyIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "settings.manage", db)
     code = payload.code.upper().strip()
     if db.scalar(select(Currency).where(Currency.code == code)):
         raise HTTPException(409, "رمز العملة مستخدم مسبقًا")
@@ -87,6 +88,7 @@ def create_currency(payload: CurrencyIn, db: Session = Depends(get_db), user: Us
 
 @router.post("/{currency_id}/set-base")
 def set_base_currency(currency_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "settings.manage", db)
     currency = db.get(Currency, currency_id)
     if not currency or not currency.is_active:
         raise HTTPException(404, "العملة غير موجودة أو غير نشطة")
@@ -113,6 +115,7 @@ def set_base_currency(currency_id: int, db: Session = Depends(get_db), user: Use
 
 @router.post("/rates", status_code=201)
 def create_rate(payload: RateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "settings.manage", db)
     c = db.get(Currency, payload.currency_id)
     if not c:
         raise HTTPException(404, "العملة غير موجودة")

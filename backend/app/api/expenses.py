@@ -8,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.accounting_dimension import AccountingDimension
 from app.models.expense import Expense
 from app.models.journal import JournalEntry
+from app.models.audit_log import AuditLog
 from app.models.party import Party
 from app.models.user import User
 
@@ -29,6 +31,7 @@ class ExpenseIn(BaseModel):
     program_id: int | None = None
     expense_account_id: int | None = None
     payment_account_id: int | None = None
+    dimension_id: int | None = None
 
 
 def _branch_allowed(user: User, branch_id: int | None) -> bool:
@@ -47,11 +50,11 @@ def _validate_account(db: Session, user: User, account_id: int, label: str) -> A
 def _resolve_expense_account(db: Session, user: User, account_id: int | None) -> int:
     if account_id is not None:
         account = _validate_account(db, user, account_id, "حساب المصروف")
-        if account.account_type != "expense":
+        if account.account_type not in {"expense", "cost_of_service"}:
             raise HTTPException(400, "الحساب المختار يجب أن يكون من نوع المصروفات")
         return account.id
 
-    stmt = select(Account).where(Account.account_type == "expense", Account.is_active.is_(True))
+    stmt = select(Account).where(Account.account_type.in_(["expense", "cost_of_service"]), Account.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     candidates = list(db.scalars(stmt.order_by(Account.code)))
@@ -79,6 +82,7 @@ def _next_expense_number(db: Session, year: int) -> str:
 
 @router.get("")
 def list_expenses(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.view", db)
     stmt = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((Expense.branch_id == user.branch_id) | Expense.branch_id.is_(None))
@@ -87,6 +91,7 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("", status_code=201)
 def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.create", db)
     expense_number = (payload.expense_number or "").strip() or _next_expense_number(db, payload.expense_date.year)
     if db.scalar(select(Expense).where(Expense.expense_number == expense_number)):
         raise HTTPException(409, "رقم المصروف مستخدم مسبقًا")
@@ -98,6 +103,13 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
             raise HTTPException(400, "حساب الدفع يجب أن يكون حساب أصول")
         if payload.payment_account_id == expense_account_id:
             raise HTTPException(400, "حساب المصروف وحساب الدفع يجب أن يكونا مختلفين")
+
+    if payload.dimension_id is not None:
+        dimension = db.get(AccountingDimension, payload.dimension_id)
+        if not dimension or not dimension.is_active:
+            raise HTTPException(400, "البعد المحاسبي غير موجود أو غير نشط")
+        if not _branch_allowed(user, dimension.branch_id):
+            raise HTTPException(403, "البعد المحاسبي تابع لفرع آخر")
 
     if payload.supplier_id is not None:
         supplier = db.get(Party, payload.supplier_id)
@@ -118,11 +130,17 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
         program_id=payload.program_id,
         expense_account_id=expense_account_id,
         payment_account_id=payload.payment_account_id,
+        dimension_id=payload.dimension_id,
         created_by=user.id,
         branch_id=user.branch_id,
         status="draft",
     )
     db.add(expense)
+    db.flush()
+    db.add(AuditLog(
+        user_id=user.id, action="create", entity_type="expense", entity_id=expense.id,
+        details=f'{{"expense_number":"{expense.expense_number}","amount":"{expense.amount}"}}',
+    ))
     db.commit()
     db.refresh(expense)
     return expense
@@ -130,6 +148,7 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
 
 @router.post("/{expense_id}/post")
 def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.post", db)
     expense = db.get(Expense, expense_id)
     if not expense:
         raise HTTPException(404, "المصروف غير موجود")
@@ -141,6 +160,12 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         raise HTTPException(409, "المصروف مرتبط بقيد محاسبي مسبقًا")
 
     expense_account_id = _resolve_expense_account(db, user, expense.expense_account_id)
+    if expense.dimension_id is not None:
+        dimension = db.get(AccountingDimension, expense.dimension_id)
+        if not dimension or not dimension.is_active:
+            raise HTTPException(400, "البعد المحاسبي للمصروف غير موجود أو غير نشط")
+        if not _branch_allowed(user, dimension.branch_id):
+            raise HTTPException(403, "البعد المحاسبي للمصروف تابع لفرع آخر")
     credit_account_id = expense.payment_account_id
     if credit_account_id is None and expense.supplier_id is not None:
         supplier = db.get(Party, expense.supplier_id)
@@ -164,10 +189,10 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
             entry_date=expense.expense_date,
             description=expense.description,
             lines=[
-                {"account_id": expense_account_id, "debit": expense.amount, "credit": Decimal("0")},
-                {"account_id": credit_account_id, "debit": Decimal("0"), "credit": expense.amount},
+                {"account_id": expense_account_id, "dimension_id": expense.dimension_id, "debit": expense.amount, "credit": Decimal("0")},
+                {"account_id": credit_account_id, "dimension_id": expense.dimension_id, "debit": Decimal("0"), "credit": expense.amount},
             ],
-            created_by=expense.created_by,
+            created_by=user.id,
             branch_id=expense.branch_id,
             status="posted",
         )
@@ -176,6 +201,10 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         expense.journal_entry_id = entry.id
         expense.status = "posted"
         expense.posted_at = datetime.utcnow()
+        db.add(AuditLog(
+            user_id=user.id, action="post", entity_type="expense", entity_id=expense.id,
+            details=f'{{"expense_number":"{expense.expense_number}","journal_entry_id":{entry.id}}}',
+        ))
         db.commit()
         db.refresh(expense)
         return expense
@@ -186,6 +215,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.post("/{expense_id}/cancel")
 def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.cancel", db)
     expense = db.get(Expense, expense_id)
     if not expense:
         raise HTTPException(404, "المصروف غير موجود")
@@ -205,7 +235,7 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
             entry_date=expense.expense_date,
             description=f"عكس المصروف {expense.expense_number}: {expense.description}",
             lines=[
-                {"account_id": line.account_id, "debit": line.credit, "credit": line.debit}
+                {"account_id": line.account_id, "dimension_id": line.dimension_id, "debit": line.credit, "credit": line.debit}
                 for line in original.lines
             ],
             created_by=user.id,
@@ -214,6 +244,10 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
         )
         reversal.posted_at = datetime.utcnow()
         expense.status = "cancelled"
+        db.add(AuditLog(
+            user_id=user.id, action="cancel", entity_type="expense", entity_id=expense.id,
+            details=f'{{"expense_number":"{expense.expense_number}","reversal_journal_entry_id":{reversal.id}}}',
+        ))
         db.commit()
         db.refresh(expense)
         return expense

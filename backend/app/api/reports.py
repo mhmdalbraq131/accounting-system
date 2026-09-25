@@ -2,15 +2,17 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
 from app.models.expense import Expense
+from app.models.fiscal_period import FiscalPeriod
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry, JournalLine
+from app.models.settings import SystemSetting
 from app.models.party import Party
 from app.models.travel import ProgramBooking, VisaService
 from app.models.user import User
@@ -45,9 +47,16 @@ def financial_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # The summary is intentionally based on posted accounting entries.
-    base = select(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id).join(Account, JournalLine.account_id == Account.id)
-    base = base.where(JournalEntry.status == "posted")
+    require_permission(user, "reports.view", db)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(400, "تاريخ البداية يجب أن يكون قبل أو مساويًا لتاريخ النهاية")
+
+    base = (
+        select(JournalLine)
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, JournalLine.account_id == Account.id)
+        .where(JournalEntry.status == "posted")
+    )
     if user.branch_id is not None:
         base = base.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
     if from_date:
@@ -55,35 +64,35 @@ def financial_summary(
     if to_date:
         base = base.where(JournalEntry.entry_date <= to_date)
 
-    revenue = db.scalar(
-        select(func.coalesce(func.sum(JournalLine.credit - JournalLine.debit), 0))
-        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .join(Account, JournalLine.account_id == Account.id)
-        .where(JournalEntry.status == "posted", Account.account_type == "revenue")
-        .where(*([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
-        .where(*([] if from_date is None else [JournalEntry.entry_date >= from_date]))
-        .where(*([] if to_date is None else [JournalEntry.entry_date <= to_date]))
-    ) or 0
-    expenses = db.scalar(
-        select(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
-        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .join(Account, JournalLine.account_id == Account.id)
-        .where(JournalEntry.status == "posted", Account.account_type == "expense")
-        .where(*([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
-        .where(*([] if from_date is None else [JournalEntry.entry_date >= from_date]))
-        .where(*([] if to_date is None else [JournalEntry.entry_date <= to_date]))
-    ) or 0
+    rows = db.execute(base).scalars().all()
+    configured_cost_ids = set()
+    for value in db.scalars(select(SystemSetting.value).where(SystemSetting.key.like("%_cost_account_id"))).all():
+        try:
+            configured_cost_ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    revenue = Decimal("0")
+    service_cost = Decimal("0")
+    operating_expenses = Decimal("0")
+    for line in rows:
+        account = db.get(Account, line.account_id)
+        if account.account_type == "revenue":
+            revenue += Decimal(str(line.credit or 0)) - Decimal(str(line.debit or 0))
+        elif account.account_type == "cost_of_service" or account.id in configured_cost_ids:
+            service_cost += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
+        elif account.account_type == "expense":
+            operating_expenses += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
 
-    revenue = Decimal(str(revenue))
-    expenses = Decimal(str(expenses))
+    gross_profit = revenue - service_cost
+    net_profit = gross_profit - operating_expenses
     return {
         "from_date": from_date,
         "to_date": to_date,
         "revenue": revenue,
-        "service_cost": Decimal("0"),
-        "gross_profit": revenue,
-        "expenses": expenses,
-        "net_profit": revenue - expenses,
+        "service_cost": service_cost,
+        "gross_profit": gross_profit,
+        "expenses": operating_expenses,
+        "net_profit": net_profit,
         "source": "posted_journals",
         "printed_by": user.full_name,
         "username": user.username,
@@ -98,6 +107,7 @@ def journal_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     entries = db.scalars(_posted_entries(db, user, from_date, to_date)).all()
     return [
         {
@@ -130,6 +140,7 @@ def ledger_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     account = db.get(Account, account_id)
     if not account or not account.is_active:
         raise HTTPException(404, "الحساب غير موجود أو غير نشط")
@@ -191,7 +202,12 @@ def trial_balance(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    accounts_stmt = select(Account).where(Account.is_active.is_(True))
+    require_permission(user, "reports.view", db)
+    accounts_stmt = select(Account).where(
+        (Account.is_active.is_(True))
+        | select(JournalLine.id).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(JournalLine.account_id == Account.id, JournalEntry.status == "posted").exists()
+    )
     if user.branch_id is not None:
         accounts_stmt = accounts_stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     accounts = db.scalars(accounts_stmt.order_by(Account.code)).all()
@@ -207,9 +223,21 @@ def trial_balance(
         )
         if user.branch_id is not None:
             stmt = stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
-        stmt = apply_dates(stmt, JournalEntry.entry_date, from_date, to_date)
+        if to_date:
+            stmt = stmt.where(JournalEntry.entry_date <= to_date)
+        if from_date:
+            pre_stmt = (
+                select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+                .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+                .where(JournalEntry.status == "posted", JournalLine.account_id == account.id, JournalEntry.entry_date < from_date)
+            )
+            if user.branch_id is not None:
+                pre_stmt = pre_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+            pre_debit, pre_credit = db.execute(pre_stmt).one()
+        else:
+            pre_debit, pre_credit = Decimal("0"), Decimal("0")
         debit, credit = db.execute(stmt).one()
-        net = Decimal(str(account.opening_balance or 0)) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+        net = (Decimal(str(account.opening_balance or 0)) + Decimal(str(pre_debit or 0)) - Decimal(str(pre_credit or 0))) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
         debit_balance = net if net > 0 else Decimal("0")
         credit_balance = -net if net < 0 else Decimal("0")
         total_debit += debit_balance
@@ -242,13 +270,14 @@ def profit_loss(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     stmt = (
         select(Account.id, Account.code, Account.name_ar, Account.account_type,
                func.coalesce(func.sum(JournalLine.debit), 0).label("debit"),
                func.coalesce(func.sum(JournalLine.credit), 0).label("credit"))
         .join(JournalLine, JournalLine.account_id == Account.id)
         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense"]))
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense", "cost_of_service"]))
         .group_by(Account.id, Account.code, Account.name_ar, Account.account_type)
         .order_by(Account.code)
     )
@@ -290,6 +319,7 @@ def cash_movement(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     stmt = select(FinancialAccount).where(FinancialAccount.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((FinancialAccount.branch_id == user.branch_id) | FinancialAccount.branch_id.is_(None))
@@ -304,19 +334,33 @@ def cash_movement(
         )
         if user.branch_id is not None:
             q = q.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
-        q = apply_dates(q, JournalEntry.entry_date, from_date, to_date)
+        if to_date:
+            q = q.where(JournalEntry.entry_date <= to_date)
+        if from_date:
+            opening_q = (
+                select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+                .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+                .where(JournalEntry.status == "posted", JournalLine.account_id == fa.ledger_account_id, JournalEntry.entry_date < from_date)
+            )
+            if user.branch_id is not None:
+                opening_q = opening_q.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+            opening_debit, opening_credit = db.execute(opening_q).one()
+        else:
+            opening_debit, opening_credit = Decimal("0"), Decimal("0")
         debit, credit = db.execute(q).one()
+        configured_opening = Decimal(str(fa.opening_balance or 0))
+        period_opening = configured_opening + Decimal(str(opening_debit or 0)) - Decimal(str(opening_credit or 0))
         movement = Decimal(str(debit or 0)) - Decimal(str(credit or 0))
         rows.append({
             "financial_account_id": fa.id,
             "name": fa.name,
             "account_type": fa.account_type,
             "currency_id": fa.currency_id,
-            "opening_balance": fa.opening_balance,
+            "opening_balance": period_opening,
             "debit": debit,
             "credit": credit,
             "net_movement": movement,
-            "closing_balance": Decimal(str(fa.opening_balance or 0)) + movement,
+            "closing_balance": period_opening + movement,
             "branch_id": fa.branch_id,
         })
     return {
@@ -337,6 +381,7 @@ def party_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
@@ -369,7 +414,17 @@ def party_report(
     rows = []
     debit_total = Decimal("0")
     credit_total = Decimal("0")
-    running = Decimal("0")
+    opening_balance = Decimal(str(party.account_id and (db.get(Account, party.account_id).opening_balance or 0) or 0))
+    if from_date:
+        pre_party = stmt.where(JournalEntry.entry_date < from_date)
+        pre_debit, pre_credit = db.execute(
+            select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+            .select_from(JournalLine).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(JournalEntry.status == "posted", JournalLine.account_id == party.account_id, JournalEntry.entry_date < from_date,
+                   *([] if user.branch_id is None else [((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))]))
+        ).one()
+        opening_balance += Decimal(str(pre_debit or 0)) - Decimal(str(pre_credit or 0))
+    running = opening_balance
     for line, entry in db.execute(stmt).all():
         debit_total += Decimal(str(line.debit))
         credit_total += Decimal(str(line.credit))
@@ -392,6 +447,197 @@ def party_report(
         "total_credit": credit_total,
         "balance": running,
         "rows": rows,
+        "printed_by": user.full_name,
+        "username": user.username,
+        "branch_id": user.branch_id,
+    }
+
+
+@router.get("/balance-sheet")
+def balance_sheet(
+    as_of_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_permission(user, "reports.view", db)
+    stmt = (
+        select(Account.id, Account.code, Account.name_ar, Account.account_type,
+               func.coalesce(func.sum(JournalLine.debit), 0),
+               func.coalesce(func.sum(JournalLine.credit), 0))
+        .join(JournalLine, JournalLine.account_id == Account.id)
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["asset", "liability", "equity"]))
+        .group_by(Account.id, Account.code, Account.name_ar, Account.account_type)
+        .order_by(Account.code)
+    )
+    if user.branch_id is not None:
+        stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
+        stmt = stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    if as_of_date:
+        stmt = stmt.where(JournalEntry.entry_date <= as_of_date)
+
+    sections = {"asset": [], "liability": [], "equity": []}
+    totals = {"asset": Decimal("0"), "liability": Decimal("0"), "equity": Decimal("0")}
+    opening_stmt = select(Account.id, Account.opening_balance)
+    opening = {account_id: Decimal(str(balance or 0)) for account_id, balance in db.execute(opening_stmt).all()}
+
+    for account_id, code, name_ar, account_type, debit, credit in db.execute(stmt).all():
+        raw = opening.get(account_id, Decimal("0")) + Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+        amount = raw if account_type == "asset" else -raw
+        sections[account_type].append({
+            "account_id": account_id, "code": code, "name_ar": name_ar, "amount": amount,
+        })
+        totals[account_type] += amount
+
+    result_stmt = (
+        select(
+            func.coalesce(func.sum(
+                case(
+                    (Account.account_type == "revenue", JournalLine.credit - JournalLine.debit),
+                    (Account.account_type.in_(["expense", "cost_of_service"]), JournalLine.debit - JournalLine.credit),
+                    else_=0,
+                )
+            ), 0)
+        )
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, JournalLine.account_id == Account.id)
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense", "cost_of_service"]))
+    )
+    if user.branch_id is not None:
+        result_stmt = result_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    if as_of_date:
+        result_stmt = result_stmt.where(JournalEntry.entry_date <= as_of_date)
+    if as_of_date:
+        fiscal_period = db.scalar(
+            select(FiscalPeriod).where(
+                FiscalPeriod.start_date <= as_of_date,
+                FiscalPeriod.end_date >= as_of_date,
+                FiscalPeriod.branch_id.is_(None) if user.branch_id is None else FiscalPeriod.branch_id.in_([None, user.branch_id]),
+            ).order_by(FiscalPeriod.branch_id.desc().nulls_last())
+        )
+        if fiscal_period:
+            result_stmt = result_stmt.where(JournalEntry.entry_date >= fiscal_period.start_date)
+    current_result = Decimal(str(db.scalar(result_stmt) or 0))
+    if current_result:
+        sections["equity"].append({
+            "account_id": None,
+            "code": "CURRENT_RESULT",
+            "name_ar": "صافي نتيجة الفترة الحالية",
+            "amount": current_result,
+        })
+        totals["equity"] += current_result
+
+    return {
+        "as_of_date": as_of_date,
+        "assets": sections["asset"],
+        "liabilities": sections["liability"],
+        "equity": sections["equity"],
+        "total_assets": totals["asset"],
+        "total_liabilities": totals["liability"],
+        "total_equity": totals["equity"],
+        "current_period_result": current_result,
+        "liabilities_plus_equity": totals["liability"] + totals["equity"],
+        "balanced": totals["asset"] == totals["liability"] + totals["equity"],
+        "printed_by": user.full_name,
+        "username": user.username,
+        "branch_id": user.branch_id,
+    }
+
+
+@router.get("/service-profitability")
+def service_profitability(
+    service_type: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """تشغيلية الوكالة: ربحية الحج والعمرة والطيران والباصات والتأشيرات والخدمات الإضافية."""
+    require_permission(user, "reports.view", db)
+    rows = []
+
+    booking_stmt = select(ProgramBooking, TravelProgram).join(TravelProgram, ProgramBooking.program_id == TravelProgram.id).where(
+        ProgramBooking.status.in_(["posted", "confirmed"])
+    )
+    if user.branch_id is not None:
+        booking_stmt = booking_stmt.where((ProgramBooking.branch_id == user.branch_id) | ProgramBooking.branch_id.is_(None))
+    for booking, program in db.execute(booking_stmt).all():
+        kind = program.program_type
+        if service_type and service_type != kind:
+            continue
+        d = booking.booked_at.date()
+        if from_date and d < from_date or to_date and d > to_date:
+            continue
+        rows.append({
+            "source": "program_booking",
+            "service_type": kind,
+            "reference_id": booking.id,
+            "date": d,
+            "sale_amount": booking.sale_price,
+            "cost_amount": booking.supplier_cost,
+            "profit": booking.sale_price - booking.supplier_cost,
+            "paid_amount": booking.paid_amount,
+            "remaining_amount": booking.remaining_amount,
+            "status": booking.status,
+        })
+
+    service_stmt = select(ServiceOrder).where(ServiceOrder.status.in_(["posted", "approved"]))
+    if user.branch_id is not None:
+        service_stmt = service_stmt.where((ServiceOrder.branch_id == user.branch_id) | ServiceOrder.branch_id.is_(None))
+    for item in db.scalars(service_stmt).all():
+        if service_type and service_type != item.service_type:
+            continue
+        if from_date and item.service_date < from_date or to_date and item.service_date > to_date:
+            continue
+        rows.append({
+            "source": "service_order",
+            "service_type": item.service_type,
+            "reference_id": item.id,
+            "date": item.service_date,
+            "sale_amount": item.sale_price,
+            "cost_amount": item.supplier_cost,
+            "profit": item.sale_price - item.supplier_cost,
+            "paid_amount": item.paid_amount,
+            "remaining_amount": item.remaining_amount,
+            "status": item.status,
+        })
+
+    visa_stmt = select(VisaService).where(VisaService.status.in_(["approved", "completed"]))
+    if user.branch_id is not None:
+        visa_stmt = visa_stmt.where((VisaService.branch_id == user.branch_id) | VisaService.branch_id.is_(None))
+    for item in db.scalars(visa_stmt).all():
+        if service_type and service_type not in ("visa", "work_visa"):
+            continue
+        d = item.created_at.date()
+        if from_date and d < from_date or to_date and d > to_date:
+            continue
+        rows.append({
+            "source": "visa_service",
+            "service_type": "visa",
+            "reference_id": item.id,
+            "date": d,
+            "sale_amount": item.sale_price,
+            "cost_amount": item.supplier_cost,
+            "profit": item.sale_price - item.supplier_cost,
+            "paid_amount": Decimal("0"),
+            "remaining_amount": item.sale_price,
+            "status": item.status,
+        })
+
+    totals = {
+        "sale_amount": sum((Decimal(str(x["sale_amount"])) for x in rows), Decimal("0")),
+        "cost_amount": sum((Decimal(str(x["cost_amount"])) for x in rows), Decimal("0")),
+        "profit": sum((Decimal(str(x["profit"])) for x in rows), Decimal("0")),
+        "paid_amount": sum((Decimal(str(x["paid_amount"])) for x in rows), Decimal("0")),
+        "remaining_amount": sum((Decimal(str(x["remaining_amount"])) for x in rows), Decimal("0")),
+    }
+    return {
+        "service_type": service_type,
+        "from_date": from_date,
+        "to_date": to_date,
+        "rows": sorted(rows, key=lambda x: (x["date"], x["reference_id"]), reverse=True),
+        "totals": totals,
+        "count": len(rows),
         "printed_by": user.full_name,
         "username": user.username,
         "branch_id": user.branch_id,

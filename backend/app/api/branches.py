@@ -7,6 +7,7 @@ from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.branch import Branch
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/branches", tags=["الفروع"])
 
@@ -23,12 +24,17 @@ class BranchIn(BaseModel):
 @router.get("")
 def list_branches(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_permission(user, "branches.manage", db)
-    return db.scalars(select(Branch).order_by(Branch.is_main.desc(), Branch.name_ar)).all()
+    stmt = select(Branch).order_by(Branch.is_main.desc(), Branch.name_ar)
+    if user.branch_id is not None:
+        stmt = stmt.where(Branch.id == user.branch_id)
+    return db.scalars(stmt).all()
 
 
 @router.post("", status_code=201)
 def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_permission(user, "branches.manage", db)
+    if user.branch_id is not None:
+        raise HTTPException(403, "إدارة الفروع محصورة بمدير النظام")
     if db.scalar(select(Branch).where(Branch.code == payload.code)):
         raise HTTPException(409, "رمز الفرع مستخدم مسبقًا")
     if payload.is_main:
@@ -36,6 +42,8 @@ def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: User =
             b.is_main = False
     branch = Branch(**payload.model_dump())
     db.add(branch)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="branch", entity_id=branch.id))
     db.commit()
     db.refresh(branch)
     return branch
@@ -44,6 +52,8 @@ def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: User =
 @router.put("/{branch_id}")
 def update_branch(branch_id: int, payload: BranchIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_permission(user, "branches.manage", db)
+    if user.branch_id is not None:
+        raise HTTPException(403, "إدارة الفروع محصورة بمدير النظام")
     branch = db.get(Branch, branch_id)
     if not branch:
         raise HTTPException(404, "الفرع غير موجود")
@@ -55,6 +65,7 @@ def update_branch(branch_id: int, payload: BranchIn, db: Session = Depends(get_d
             b.is_main = False
     for key, value in payload.model_dump().items():
         setattr(branch, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="branch", entity_id=branch.id))
     db.commit()
     db.refresh(branch)
     return branch

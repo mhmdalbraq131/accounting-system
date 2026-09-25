@@ -1,14 +1,18 @@
+from datetime import date
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.party import Party
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/parties", tags=["الأطراف والعملاء والموردون والوكلاء"])
 
@@ -54,6 +58,7 @@ def list_parties(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.view", db)
     query = select(Party).order_by(Party.id.desc())
     if user.branch_id is not None:
         query = query.where((Party.branch_id == user.branch_id) | Party.branch_id.is_(None))
@@ -72,6 +77,7 @@ def create_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.create", db)
     if payload.party_type not in ALLOWED_TYPES:
         raise HTTPException(400, "نوع الطرف غير مدعوم")
     data = payload.model_dump()
@@ -79,6 +85,8 @@ def create_party(
     _validate_account(db, account_id, user)
     party = Party(**data, account_id=account_id, branch_id=user.branch_id)
     db.add(party)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -91,6 +99,7 @@ def update_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.update", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
@@ -100,6 +109,7 @@ def update_party(
     _validate_account(db, payload.account_id, user)
     for key, value in payload.model_dump().items():
         setattr(party, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -107,11 +117,13 @@ def update_party(
 
 @router.delete("/{party_id}", response_model=PartyOut)
 def delete_party(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "parties.disable", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
     party.is_active = False
+    db.add(AuditLog(user_id=user.id, action="disable", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -123,50 +135,120 @@ def disable_party(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "parties.disable", db)
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
     party.is_active = False
+    db.add(AuditLog(user_id=user.id, action="disable", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
 
 
 @router.get("/{party_id}/statement")
-def party_statement(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def party_statement(
+    party_id: int,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_permission(user, "parties.view", db)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(400, "تاريخ البداية يجب أن يكون قبل أو مساويًا لتاريخ النهاية")
+
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
+
     if party.account_id is None:
         return {
             "party_id": party.id,
             "party_name": party.name,
             "party_type": party.party_type,
-            "total_debit": 0,
-            "total_credit": 0,
-            "balance": 0,
+            "account_id": None,
+            "from_date": from_date,
+            "to_date": to_date,
+            "opening_balance": Decimal("0"),
+            "total_debit": Decimal("0"),
+            "total_credit": Decimal("0"),
+            "balance": Decimal("0"),
+            "rows": [],
             "warning": "لم يتم ربط الطرف بحساب محاسبي",
         }
 
-    query = (
-        select(
-            func.coalesce(func.sum(JournalLine.debit), 0),
-            func.coalesce(func.sum(JournalLine.credit), 0),
-        )
+    base = (
+        select(JournalLine, JournalEntry)
         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == "posted",
             JournalLine.account_id == party.account_id,
         )
     )
-    debit, credit = db.execute(query).one()
+    if user.branch_id is not None:
+        base = base.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+
+    opening = Decimal("0")
+    if from_date:
+        opening_stmt = (
+            select(
+                func.coalesce(func.sum(JournalLine.debit), 0),
+                func.coalesce(func.sum(JournalLine.credit), 0),
+            )
+            .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(
+                JournalEntry.status == "posted",
+                JournalLine.account_id == party.account_id,
+                JournalEntry.entry_date < from_date,
+            )
+        )
+        if user.branch_id is not None:
+            opening_stmt = opening_stmt.where(
+                (JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None)
+            )
+        opening_debit, opening_credit = db.execute(opening_stmt).one()
+        opening = Decimal(str(opening_debit or 0)) - Decimal(str(opening_credit or 0))
+
+    stmt = base
+    if from_date:
+        stmt = stmt.where(JournalEntry.entry_date >= from_date)
+    if to_date:
+        stmt = stmt.where(JournalEntry.entry_date <= to_date)
+    stmt = stmt.order_by(JournalEntry.entry_date, JournalEntry.id, JournalLine.id)
+
+    running = opening
+    debit_total = Decimal("0")
+    credit_total = Decimal("0")
+    rows = []
+    for line, entry in db.execute(stmt).all():
+        debit = Decimal(str(line.debit or 0))
+        credit = Decimal(str(line.credit or 0))
+        debit_total += debit
+        credit_total += credit
+        running += debit - credit
+        rows.append({
+            "entry_id": entry.id,
+            "entry_number": entry.entry_number,
+            "entry_date": entry.entry_date,
+            "description": line.description or entry.description,
+            "debit": debit,
+            "credit": credit,
+            "balance": running,
+        })
+
     return {
         "party_id": party.id,
         "party_name": party.name,
         "party_type": party.party_type,
-        "total_debit": debit,
-        "total_credit": credit,
-        "balance": debit - credit,
+        "account_id": party.account_id,
+        "from_date": from_date,
+        "to_date": to_date,
+        "opening_balance": opening,
+        "total_debit": debit_total,
+        "total_credit": credit_total,
+        "balance": running,
+        "rows": rows,
     }

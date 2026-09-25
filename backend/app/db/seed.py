@@ -1,13 +1,10 @@
 import os
 from pathlib import Path
-
 from sqlalchemy import select
-
 from app.auth import hash_password
 from app.db.session import SessionLocal
 from app.models.role import Permission, Role, RolePermission, UserRole
 from app.models.user import User
-
 
 def _load_env_file() -> None:
     env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -20,23 +17,51 @@ def _load_env_file() -> None:
         key, value = [part.strip() for part in line.split("=", 1)]
         os.environ.setdefault(key, value)
 
-
 _load_env_file()
 
 DEFAULT_PERMISSIONS = [
     ("accounts.view", "عرض الحسابات"),
+    ("parties.view", "عرض الأطراف"),
+    ("expenses.view", "عرض المصروفات"),
     ("accounts.create", "إضافة الحسابات"),
+    ("accounts.update", "تعديل الحسابات"),
+    ("accounts.disable", "تعطيل الحسابات"),
+    ("parties.create", "إضافة الأطراف"),
+    ("parties.update", "تعديل الأطراف"),
+    ("parties.disable", "تعطيل الأطراف"),
     ("vouchers.view", "عرض السندات"),
     ("vouchers.create", "إضافة السندات"),
     ("vouchers.post", "ترحيل السندات"),
     ("vouchers.cancel", "إلغاء السندات"),
     ("reports.view", "عرض التقارير"),
+    ("expenses.create", "إضافة المصروفات"),
+    ("expenses.post", "ترحيل المصروفات"),
+    ("expenses.cancel", "إلغاء المصروفات"),
+    ("journals.view", "عرض القيود اليومية"),
+    ("journals.create", "إنشاء القيود اليومية"),
+    ("journals.post", "ترحيل القيود اليومية"),
+    ("journals.cancel", "إلغاء القيود اليومية"),
     ("settings.manage", "إدارة الإعدادات"),
     ("branches.manage", "إدارة الفروع"),
     ("users.manage", "إدارة المستخدمين"),
     ("roles.manage", "إدارة الأدوار والصلاحيات"),
+    ("accounting.dimensions.manage", "إدارة الأبعاد المحاسبية"),
+    ("accounting.periods.manage", "إدارة الفترات المحاسبية"),
+    ("audit.read", "عرض سجل التدقيق"),
+    ("ar_ap.view", "عرض الذمم والمدفوعات"),
+    ("ar_ap.create", "إنشاء الذمم والمدفوعات"),
+    ("ar_ap.post", "ترحيل الذمم والمدفوعات"),
+    ("ar_ap.cancel", "إلغاء الذمم والمدفوعات"),
+    ("ar_ap.allocate", "تخصيص المدفوعات على الفواتير"),
+    ("travel.view", "عرض الحج والعمرة والسفر"),
+    ("travel.create", "إنشاء خدمات الحج والعمرة والسفر"),
+    ("travel.post", "ترحيل خدمات الحج والعمرة والسفر"),
+    ("travel.cancel", "إلغاء خدمات الحج والعمرة والسفر"),
+    ("services.view", "عرض الخدمات التشغيلية"),
+    ("services.create", "إنشاء الخدمات التشغيلية"),
+    ("services.post", "ترحيل الخدمات التشغيلية"),
+    ("services.cancel", "إلغاء الخدمات التشغيلية"),
 ]
-
 
 def seed() -> None:
     username = os.getenv("ACCOUNTING_ADMIN_USER", "admin")
@@ -79,7 +104,6 @@ def seed() -> None:
         if not db.scalar(select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)):
             db.add(UserRole(user_id=user.id, role_id=role.id))
         db.commit()
-
 
 if __name__ == "__main__":
     seed()

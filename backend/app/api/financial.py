@@ -53,6 +53,7 @@ def _validate(db: Session, payload: FinancialIn, user: User) -> None:
 
 @router.get("")
 def list_financial(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "accounts.view", db)
     stmt = select(FinancialAccount).order_by(FinancialAccount.account_type, FinancialAccount.name)
     if user.branch_id is not None:
         stmt = stmt.where((FinancialAccount.branch_id == user.branch_id) | (FinancialAccount.branch_id.is_(None)))

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.party import Party
 from app.models.journal import JournalEntry, JournalLine
@@ -101,6 +101,7 @@ def party_services_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     if service_type not in ALL_SERVICES:
         raise HTTPException(400, "نوع الخدمة غير مدعوم")
 
@@ -191,6 +192,19 @@ def party_services_report(
             "credit": credit,
             "balance_delta": debit - credit,
         })
+
+    # A service can be discovered through both its source row and a linked voucher.
+    # Keep one journal occurrence per service type to avoid double-counting the same posting.
+    deduped = []
+    seen = set()
+    for row in rows:
+        key = (row.get("entry_id"), row.get("service_type"))
+        if key[0] is not None and key in seen:
+            continue
+        if key[0] is not None:
+            seen.add(key)
+        deduped.append(row)
+    rows = deduped
 
     rows.sort(key=lambda r: (r["entry_date"], str(r["entry_number"])))
     total_debit = sum((Decimal(str(r["debit"] or 0)) for r in rows), Decimal("0"))

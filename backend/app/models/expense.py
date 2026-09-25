@@ -20,6 +20,7 @@ class Expense(Base):
     program_id: Mapped[int | None] = mapped_column(ForeignKey("travel_programs.id"), nullable=True)
     expense_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     payment_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    dimension_id: Mapped[int | None] = mapped_column(ForeignKey("accounting_dimensions.id"), nullable=True, index=True)
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True, unique=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

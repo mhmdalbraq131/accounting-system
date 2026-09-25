@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from "react";
 import {createAccount,createParty,getAccounts,getParties,getFinancialSummary,getJournalReport,getLedgerReport,getPartyServiceReport,getProfitLoss,getTrialBalance,printPartyStatement} from "./api";
-const TYPES=[['asset','أصول'],['liability','خصوم'],['equity','حقوق ملكية'],['revenue','إيرادات'],['expense','مصروفات']];
+const TYPES=[['asset','أصول'],['liability','خصوم'],['equity','حقوق ملكية'],['revenue','إيرادات'],['cost_of_service','تكلفة الخدمات'],['expense','مصروفات']];
 const SERVICE_LABELS:[string,string][]=[['all','كل الخدمات'],['hajj','الحج'],['umrah','العمرة'],['flight','الطيران'],['bus','الباصات'],['visit','الزيارات'],['work_visa','تأشيرات العمل']];
 const PARTY_TYPES:[string,string][]=[['agent','وكيل'],['customer','عميل'],['supplier','مورد']];
 const money=(v:any)=>Number(v||0).toLocaleString("ar-YE",{minimumFractionDigits:2,maximumFractionDigits:2});

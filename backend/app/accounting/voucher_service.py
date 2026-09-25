@@ -1,11 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.currency import Currency
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial import FinancialAccount
@@ -20,7 +22,10 @@ PAYMENT_LINK_TYPES = {"hajj_booking", "umrah_booking", "service_order"}
 
 
 def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> FinancialAccount | None:
-    return db.scalar(select(FinancialAccount).where(FinancialAccount.ledger_account_id == ledger_account_id, FinancialAccount.active.is_(True)))
+    return db.scalar(select(FinancialAccount).where(
+        FinancialAccount.ledger_account_id == ledger_account_id,
+        FinancialAccount.is_active.is_(True),
+    ))
 
 
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date, amount: Decimal,
@@ -54,8 +59,16 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
     destination = db.get(Account, destination_account_id)
     if not source or not source.is_active or not destination or not destination.is_active:
         raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
+    if branch_id is not None:
+        if source.branch_id not in (None, branch_id) or destination.branch_id not in (None, branch_id):
+            raise ValueError("أحد الحسابات المحددة تابع لفرع آخر")
     source_financial = _financial_account_for_ledger(db, source_account_id)
     destination_financial = _financial_account_for_ledger(db, destination_account_id)
+    if branch_id is not None:
+        for financial in (source_financial, destination_financial):
+            if financial is not None and financial.branch_id not in (None, branch_id):
+                raise ValueError("الحساب المالي تابع لفرع آخر")
+
     if voucher_type == "transfer":
         if not source_financial or not destination_financial:
             raise ValueError("سند التحويل يجب أن يكون بين صندوق أو بنك أو محفظة")
@@ -73,7 +86,9 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         if currency.is_base:
             exchange_rate = Decimal("1")
         elif exchange_rate is None:
-            rate = db.query(ExchangeRate).filter(ExchangeRate.currency_id == currency_id).order_by(ExchangeRate.effective_at.desc()).first()
+            rate = db.query(ExchangeRate).filter(
+                ExchangeRate.currency_id == currency_id
+            ).order_by(ExchangeRate.effective_at.desc()).first()
             if not rate:
                 raise ValueError("يجب تحديد سعر صرف للعملة")
             exchange_rate = rate.rate_to_base
@@ -102,6 +117,13 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
     )
     db.add(voucher)
     db.flush()
+    db.add(AuditLog(
+        user_id=created_by,
+        action="create",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "type": voucher.voucher_type}, ensure_ascii=False),
+    ))
     return voucher
 
 
@@ -178,6 +200,10 @@ def _validate_linked_voucher(db: Session, voucher: Voucher) -> None:
         raise ValueError("ربط الخدمة متاح حاليًا مع سندات القبض والصرف فقط")
 
     row = _get_linked(db, voucher)
+    if voucher.branch_id is not None:
+        linked_branch = getattr(row, "branch_id", None)
+        if linked_branch not in (None, voucher.branch_id):
+            raise ValueError("الخدمة المرتبطة بالسند تابعة لفرع آخر")
     if getattr(row, "journal_entry_id", None) is None:
         raise ValueError("يجب ترحيل الخدمة قبل ربط سند مالي بها")
     if getattr(row, "status", None) == "cancelled":
@@ -208,7 +234,7 @@ def _validate_linked_voucher(db: Session, voucher: Voucher) -> None:
             raise ValueError("مبلغ الصرف يتجاوز المتبقي للمورد على الخدمة")
 
 
-def post_voucher(db: Session, voucher: Voucher) -> Voucher:
+def post_voucher(db: Session, voucher: Voucher, *, posted_by: int | None = None) -> Voucher:
     if voucher.status != "draft":
         raise ValueError("لا يمكن ترحيل سند ليس في حالة مسودة")
     _validate_linked_voucher(db, voucher)
@@ -218,7 +244,7 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
         entry_date=voucher.voucher_date,
         description=voucher.description,
         lines=_journal_lines(voucher),
-        created_by=voucher.created_by,
+        created_by=posted_by if posted_by is not None else voucher.created_by,
         branch_id=voucher.branch_id,
         status="posted",
     )
@@ -229,26 +255,34 @@ def post_voucher(db: Session, voucher: Voucher) -> Voucher:
     amount = voucher.base_amount or voucher.amount
     _apply_service_receipt(db, voucher, amount)
     _apply_supplier_payment(db, voucher, amount)
+    db.add(AuditLog(
+        user_id=posted_by if posted_by is not None else voucher.created_by,
+        action="post",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "journal_entry_id": entry.id}, ensure_ascii=False),
+    ))
     db.flush()
     return voucher
 
 
-def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
+def cancel_voucher(db: Session, voucher: Voucher, *, cancelled_by: int | None = None) -> Voucher:
     if voucher.status != "posted" or not voucher.journal_entry_id:
         raise ValueError("لا يمكن إلغاء سند غير مرحّل")
     original = db.get(JournalEntry, voucher.journal_entry_id)
     if not original:
         raise ValueError("القيد المرتبط بالسند غير موجود")
-    lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines]
+    lines = [{"account_id": line.account_id, "debit": line.credit, "credit": line.debit, "dimension_id": line.dimension_id} for line in original.lines]
     reversal = create_journal(
         db,
         entry_number=f"REV-{voucher.voucher_number}",
         entry_date=voucher.voucher_date,
         description=f"عكس السند {voucher.voucher_number}: {voucher.description}",
         lines=lines,
-        created_by=voucher.created_by,
+        created_by=cancelled_by if cancelled_by is not None else voucher.created_by,
         branch_id=voucher.branch_id,
         status="posted",
+        fiscal_period_id=original.fiscal_period_id,
     )
     reversal.posted_at = datetime.utcnow()
     amount = voucher.base_amount or voucher.amount
@@ -256,5 +290,12 @@ def cancel_voucher(db: Session, voucher: Voucher) -> Voucher:
     _apply_supplier_payment(db, voucher, amount, reverse=True)
     voucher.status = "cancelled"
     voucher.posted_at = datetime.utcnow()
+    db.add(AuditLog(
+        user_id=cancelled_by if cancelled_by is not None else voucher.created_by,
+        action="cancel",
+        entity_type="voucher",
+        entity_id=voucher.id,
+        details=json.dumps({"voucher_number": voucher.voucher_number, "reversal_entry_id": reversal.id}, ensure_ascii=False),
+    ))
     db.flush()
     return voucher

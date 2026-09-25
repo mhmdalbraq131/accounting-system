@@ -6,10 +6,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal
-from app.auth import get_current_user
+from app.accounting.journal_service import create_journal, resolve_reversal_date
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.journal import JournalEntry
 from app.models.party import Party
 from app.models.settings import SystemSetting
@@ -42,6 +43,7 @@ class BookingCreate(BaseModel):
     program_id: int
     pilgrim_id: int
     customer_id: int | None = None
+    agent_id: int | None = None
     sale_price: Decimal | None = Field(default=None, ge=0)
     supplier_cost: Decimal | None = Field(default=None, ge=0)
     customer_type: str = "direct"
@@ -75,13 +77,15 @@ def _resolve_account(db: Session, user: User, key: str, account_type: str, label
         account = db.get(Account, account_id)
         if not account or not account.is_active:
             raise HTTPException(400, f"{label} المحدد في الإعدادات غير موجود أو غير نشط")
-        if account.account_type != account_type:
+        allowed_types = {"expense", "cost_of_service"} if account_type == "cost_of_service" else {account_type}
+        if account.account_type not in allowed_types:
             raise HTTPException(400, f"حساب {label} يجب أن يكون من نوع {account_type}")
         if not _branch_allowed(user, account.branch_id):
             raise HTTPException(403, f"{label} تابع لفرع آخر")
         return account
 
-    stmt = select(Account).where(Account.account_type == account_type, Account.is_active.is_(True))
+    account_types = ["expense", "cost_of_service"] if account_type == "cost_of_service" else [account_type]
+    stmt = select(Account).where(Account.account_type.in_(account_types), Account.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((Account.branch_id == user.branch_id) | Account.branch_id.is_(None))
     candidates = list(db.scalars(stmt.order_by(Account.code)))
@@ -157,6 +161,7 @@ def _post_service_journal(
 
 @router.get("/programs")
 def programs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(TravelProgram).order_by(TravelProgram.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((TravelProgram.branch_id == user.branch_id) | TravelProgram.branch_id.is_(None))
@@ -165,6 +170,7 @@ def programs(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/programs", status_code=201)
 def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     if payload.program_type not in {"umrah", "hajj"}:
         raise HTTPException(400, "نوع البرنامج يجب أن يكون عمرة أو حج")
     if db.scalar(select(TravelProgram).where(TravelProgram.code == payload.code)):
@@ -173,6 +179,8 @@ def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: 
         _party_account(db, user, payload.supplier_id, {"supplier", "both"}, "المورد")
     program = TravelProgram(**payload.model_dump(), branch_id=user.branch_id)
     db.add(program)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="travel_program", entity_id=program.id, details=f"إنشاء برنامج {program.name_ar}"))
     db.commit()
     db.refresh(program)
     return program
@@ -180,6 +188,7 @@ def create_program(payload: ProgramCreate, db: Session = Depends(get_db), user: 
 
 @router.get("/pilgrims")
 def pilgrims(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(Pilgrim).order_by(Pilgrim.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((Pilgrim.branch_id == user.branch_id) | Pilgrim.branch_id.is_(None))
@@ -188,10 +197,13 @@ def pilgrims(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/pilgrims", status_code=201)
 def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     if payload.customer_id is not None:
         _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل")
     pilgrim = Pilgrim(**payload.model_dump(), branch_id=user.branch_id)
     db.add(pilgrim)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="pilgrim", entity_id=pilgrim.id, details=f"إنشاء مستفيد {pilgrim.full_name}"))
     db.commit()
     db.refresh(pilgrim)
     return pilgrim
@@ -199,6 +211,7 @@ def create_pilgrim(payload: PilgrimCreate, db: Session = Depends(get_db), user: 
 
 @router.get("/bookings")
 def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(ProgramBooking).order_by(ProgramBooking.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((ProgramBooking.branch_id == user.branch_id) | ProgramBooking.branch_id.is_(None))
@@ -207,6 +220,7 @@ def bookings(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
 @router.post("/bookings", status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.create", db)
     program = db.get(TravelProgram, payload.program_id)
     if not program or not program.is_active or not _branch_allowed(user, program.branch_id):
         raise HTTPException(404, "البرنامج غير موجود أو غير نشط")
@@ -215,6 +229,14 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
         raise HTTPException(404, "المعتمر أو الحاج غير موجود")
     if payload.customer_id is not None:
         _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل")
+    if payload.customer_id is not None and payload.agent_id is not None:
+        raise HTTPException(400, "لا يمكن الجمع بين العميل والوكيل في نفس الحجز")
+    if payload.customer_type == "direct" and payload.customer_id is None:
+        raise HTTPException(400, "يجب تحديد العميل للحجز المباشر")
+    if payload.customer_type == "agency" and payload.agent_id is None:
+        raise HTTPException(400, "يجب تحديد الوكيل للحجز عن طريق وكالة")
+    if payload.agent_id is not None:
+        _party_account(db, user, payload.agent_id, {"agent", "both"}, "الوكيل")
     if payload.customer_type not in {"direct", "agency"}:
         raise HTTPException(400, "نوع العميل يجب أن يكون مباشر أو وكالة")
     booked = db.scalar(
@@ -231,6 +253,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
         program_id=program.id,
         pilgrim_id=payload.pilgrim_id,
         customer_id=payload.customer_id,
+        agent_id=payload.agent_id,
         sale_price=sale,
         supplier_cost=cost,
         paid_amount=Decimal("0"),
@@ -241,6 +264,8 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
         status="reserved",
     )
     db.add(booking)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="program_booking", entity_id=booking.id, details=f"إنشاء حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -248,6 +273,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user: 
 
 @router.post("/bookings/{booking_id}/post")
 def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.post", db)
     booking = db.get(ProgramBooking, booking_id)
     if not booking:
         raise HTTPException(404, "الحجز غير موجود")
@@ -257,11 +283,13 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
         raise HTTPException(400, "لا يمكن ترحيل حجز غير نشط")
     if booking.journal_entry_id:
         raise HTTPException(409, "الحجز مرتبط بقيد محاسبي مسبقًا")
-    if booking.customer_id is None:
-        raise HTTPException(400, "يجب ربط الحجز بعميل قبل الترحيل")
+    if booking.customer_id is None and booking.agent_id is None:
+        raise HTTPException(400, "يجب ربط الحجز بعميل أو وكيل قبل الترحيل")
 
     program = db.get(TravelProgram, booking.program_id)
-    customer_account = _party_account(db, user, booking.customer_id, {"customer", "both"}, "العميل")
+    party_id = booking.customer_id if booking.customer_id is not None else booking.agent_id
+    party_types = {"customer", "both"} if booking.customer_id is not None else {"agent", "both"}
+    customer_account = _party_account(db, user, party_id, party_types, "العميل" if booking.customer_id is not None else "الوكيل")
     revenue_account = _resolve_account(db, user, "travel_revenue_account_id", "revenue", "إيراد برامج الحج والعمرة")
     cost_account = None
     supplier_account = None
@@ -269,7 +297,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
         if not program or program.supplier_id is None:
             raise HTTPException(400, "يجب تحديد مورد البرنامج قبل ترحيل تكلفة الحجز")
         supplier_account = _party_account(db, user, program.supplier_id, {"supplier", "both"}, "المورد")
-        cost_account = _resolve_account(db, user, "travel_cost_account_id", "expense", "تكلفة برامج الحج والعمرة")
+        cost_account = _resolve_account(db, user, "travel_cost_account_id", "cost_of_service", "تكلفة برامج الحج والعمرة")
 
     entry = _post_service_journal(
         db,
@@ -287,6 +315,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
     )
     booking.journal_entry_id = entry.id
     booking.status = "confirmed"
+    db.add(AuditLog(user_id=user.id, action="post", entity_type="program_booking", entity_id=booking.id, details=f"ترحيل حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -294,6 +323,7 @@ def post_booking(booking_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.post("/bookings/{booking_id}/cancel")
 def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.cancel", db)
     booking = db.get(ProgramBooking, booking_id)
     if not booking:
         raise HTTPException(404, "الحجز غير موجود")
@@ -301,6 +331,8 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
         raise HTTPException(403, "الحجز تابع لفرع آخر")
     if booking.status == "cancelled":
         raise HTTPException(400, "الحجز ملغى مسبقًا")
+    if Decimal(str(booking.paid_amount or 0)) > 0:
+        raise HTTPException(409, "لا يمكن إلغاء حجز عليه تحصيلات؛ اعكس سندات القبض المرتبطة أولًا")
     if not booking.journal_entry_id:
         booking.status = "cancelled"
         db.commit()
@@ -313,7 +345,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
         reversal = create_journal(
             db,
             entry_number=f"REV-TRAVEL-BOOK-{booking.id}",
-            entry_date=date.today(),
+            entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),
             description=f"عكس حجز برنامج #{booking.id}",
             lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines],
             created_by=user.id,
@@ -325,6 +357,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400, str(exc))
     reversal.posted_at = datetime.utcnow()
     booking.status = "cancelled"
+    db.add(AuditLog(user_id=user.id, action="cancel", entity_type="program_booking", entity_id=booking.id, details=f"إلغاء حجز برنامج #{booking.id}"))
     db.commit()
     db.refresh(booking)
     return booking
@@ -332,6 +365,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
 
 @router.get("/visas")
 def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.view", db)
     stmt = select(VisaService).order_by(VisaService.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((VisaService.branch_id == user.branch_id) | VisaService.branch_id.is_(None))
@@ -340,7 +374,10 @@ def visas(db: Session = Depends(get_db), user: User = Depends(get_current_user))
 
 @router.post("/visas", status_code=201)
 def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل") if payload.customer_id is not None else None
+    require_permission(user, "travel.create", db)
+    if payload.customer_id is None:
+        raise HTTPException(400, "يجب تحديد العميل لخدمة التأشيرة")
+    _party_account(db, user, payload.customer_id, {"customer", "both"}, "العميل")
     if payload.supplier_id is not None:
         _party_account(db, user, payload.supplier_id, {"supplier", "both"}, "المورد")
     pilgrim = db.get(Pilgrim, payload.pilgrim_id)
@@ -353,6 +390,8 @@ def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User =
         status="pending",
     )
     db.add(visa)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="visa_service", entity_id=visa.id, details=f"إنشاء خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa
@@ -360,6 +399,7 @@ def create_visa(payload: VisaCreate, db: Session = Depends(get_db), user: User =
 
 @router.post("/visas/{visa_id}/post")
 def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.post", db)
     visa = db.get(VisaService, visa_id)
     if not visa:
         raise HTTPException(404, "خدمة التأشيرة غير موجودة")
@@ -375,7 +415,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
     cost_account = None
     if visa.supplier_cost > 0:
         supplier_account = _party_account(db, user, visa.supplier_id, {"supplier", "both"}, "المورد")
-        cost_account = _resolve_account(db, user, "visa_cost_account_id", "expense", "تكلفة خدمات التأشيرات")
+        cost_account = _resolve_account(db, user, "visa_cost_account_id", "cost_of_service", "تكلفة خدمات التأشيرات")
 
     entry = _post_service_journal(
         db,
@@ -393,6 +433,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
     )
     visa.journal_entry_id = entry.id
     visa.status = "approved"
+    db.add(AuditLog(user_id=user.id, action="post", entity_type="visa_service", entity_id=visa.id, details=f"ترحيل خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa
@@ -400,6 +441,7 @@ def post_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(
 
 @router.post("/visas/{visa_id}/cancel")
 def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "travel.cancel", db)
     visa = db.get(VisaService, visa_id)
     if not visa:
         raise HTTPException(404, "خدمة التأشيرة غير موجودة")
@@ -419,7 +461,7 @@ def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depend
         reversal = create_journal(
             db,
             entry_number=f"REV-TRAVEL-VISA-{visa.id}",
-            entry_date=date.today(),
+            entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),
             description=f"عكس خدمة التأشيرة #{visa.id}",
             lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines],
             created_by=user.id,
@@ -431,6 +473,7 @@ def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depend
         raise HTTPException(400, str(exc))
     reversal.posted_at = datetime.utcnow()
     visa.status = "cancelled"
+    db.add(AuditLog(user_id=user.id, action="cancel", entity_type="visa_service", entity_id=visa.id, details=f"إلغاء خدمة تأشيرة #{visa.id}"))
     db.commit()
     db.refresh(visa)
     return visa

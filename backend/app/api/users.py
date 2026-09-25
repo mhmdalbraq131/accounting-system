@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.branch import Branch
 from app.models.role import Permission, Role, RolePermission, UserRole
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/users", tags=["المستخدمون والصلاحيات"])
 
@@ -84,6 +85,7 @@ def update_role_permissions(role_id: int, payload: RolePermissionsUpdate, db: Se
         raise HTTPException(400, f"صلاحيات غير معروفة: {', '.join(missing)}")
     db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
     db.add_all([RolePermission(role_id=role_id, permission_id=p.id) for p in permissions])
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="role_permissions", entity_id=role.id))
     db.commit()
     return {"role_id": role_id, "permission_codes": sorted(p.code for p in permissions)}
 
@@ -91,7 +93,10 @@ def update_role_permissions(role_id: int, payload: RolePermissionsUpdate, db: Se
 @router.get("")
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_permission(user, "users.manage", db)
-    return [_user_out(item, db) for item in db.scalars(select(User).order_by(User.full_name)).all()]
+    stmt = select(User).order_by(User.full_name)
+    if user.branch_id is not None:
+        stmt = stmt.where(User.branch_id == user.branch_id)
+    return [_user_out(item, db) for item in db.scalars(stmt).all()]
 
 
 @router.post("", status_code=201)
@@ -101,6 +106,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user: User =
         raise HTTPException(409, "اسم المستخدم مستخدم مسبقًا")
     if payload.branch_id is not None and not db.get(Branch, payload.branch_id):
         raise HTTPException(400, "الفرع غير موجود")
+    if user.branch_id is not None and payload.branch_id != user.branch_id:
+        raise HTTPException(403, "لا يمكنك إنشاء مستخدم تابع لفرع آخر")
     data = payload.model_dump()
     role_id = data.pop("role_id")
     password = data.pop("password")
@@ -111,6 +118,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user: User =
         if not db.get(Role, role_id):
             raise HTTPException(400, "الدور غير موجود")
         db.add(UserRole(user_id=new_user.id, role_id=role_id))
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="user", entity_id=new_user.id))
     db.commit()
     db.refresh(new_user)
     return _user_out(new_user, db)
@@ -122,11 +130,15 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(404, "المستخدم غير موجود")
+    if current_user.branch_id is not None and target.branch_id != current_user.branch_id:
+        raise HTTPException(403, "المستخدم تابع لفرع آخر")
     duplicate = db.scalar(select(User).where(User.username == payload.username, User.id != user_id))
     if duplicate:
         raise HTTPException(409, "اسم المستخدم مستخدم مسبقًا")
     if payload.branch_id is not None and not db.get(Branch, payload.branch_id):
         raise HTTPException(400, "الفرع غير موجود")
+    if current_user.branch_id is not None and payload.branch_id != current_user.branch_id:
+        raise HTTPException(403, "لا يمكنك نقل المستخدم إلى فرع آخر")
     if payload.role_id is not None and not db.get(Role, payload.role_id):
         raise HTTPException(400, "الدور غير موجود")
     target.username = payload.username
@@ -138,6 +150,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     db.execute(delete(UserRole).where(UserRole.user_id == user_id))
     if payload.role_id is not None:
         db.add(UserRole(user_id=user_id, role_id=payload.role_id))
+    db.add(AuditLog(user_id=current_user.id, action="update", entity_type="user", entity_id=target.id))
     db.commit()
     db.refresh(target)
     return _user_out(target, db)
