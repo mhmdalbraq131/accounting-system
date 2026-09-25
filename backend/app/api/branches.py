@@ -7,6 +7,7 @@ from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.branch import Branch
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/branches", tags=["الفروع"])
 
@@ -36,6 +37,8 @@ def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: User =
             b.is_main = False
     branch = Branch(**payload.model_dump())
     db.add(branch)
+    db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="branch", entity_id=branch.id))
     db.commit()
     db.refresh(branch)
     return branch
