@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal, _resolve_period
+from app.accounting.journal_service import create_journal, _resolve_period, resolve_reversal_date
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
@@ -188,7 +188,7 @@ def cancel_manual_journal(
         reversal = create_journal(
             db,
             entry_number=f"REV-JV-{entry.entry_number}",
-            entry_date=date.today(),
+            entry_date=resolve_reversal_date(db, entry.entry_date, entry.branch_id),
             description=f"عكس القيد {entry.entry_number}: {entry.description}",
             lines=[
                 {
