@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -145,40 +148,107 @@ def disable_party(
 
 
 @router.get("/{party_id}/statement")
-def party_statement(party_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def party_statement(
+    party_id: int,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     require_permission(user, "parties.view", db)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(400, "تاريخ البداية يجب أن يكون قبل أو مساويًا لتاريخ النهاية")
+
     party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
+
     if party.account_id is None:
         return {
             "party_id": party.id,
             "party_name": party.name,
             "party_type": party.party_type,
-            "total_debit": 0,
-            "total_credit": 0,
-            "balance": 0,
+            "account_id": None,
+            "from_date": from_date,
+            "to_date": to_date,
+            "opening_balance": Decimal("0"),
+            "total_debit": Decimal("0"),
+            "total_credit": Decimal("0"),
+            "balance": Decimal("0"),
+            "rows": [],
             "warning": "لم يتم ربط الطرف بحساب محاسبي",
         }
 
-    query = (
-        select(
-            func.coalesce(func.sum(JournalLine.debit), 0),
-            func.coalesce(func.sum(JournalLine.credit), 0),
-        )
+    base = (
+        select(JournalLine, JournalEntry)
         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == "posted",
             JournalLine.account_id == party.account_id,
         )
     )
-    debit, credit = db.execute(query).one()
+    if user.branch_id is not None:
+        base = base.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+
+    opening = Decimal("0")
+    if from_date:
+        opening_stmt = (
+            select(
+                func.coalesce(func.sum(JournalLine.debit), 0),
+                func.coalesce(func.sum(JournalLine.credit), 0),
+            )
+            .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+            .where(
+                JournalEntry.status == "posted",
+                JournalLine.account_id == party.account_id,
+                JournalEntry.entry_date < from_date,
+            )
+        )
+        if user.branch_id is not None:
+            opening_stmt = opening_stmt.where(
+                (JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None)
+            )
+        opening_debit, opening_credit = db.execute(opening_stmt).one()
+        opening = Decimal(str(opening_debit or 0)) - Decimal(str(opening_credit or 0))
+
+    stmt = base
+    if from_date:
+        stmt = stmt.where(JournalEntry.entry_date >= from_date)
+    if to_date:
+        stmt = stmt.where(JournalEntry.entry_date <= to_date)
+    stmt = stmt.order_by(JournalEntry.entry_date, JournalEntry.id, JournalLine.id)
+
+    running = opening
+    debit_total = Decimal("0")
+    credit_total = Decimal("0")
+    rows = []
+    for line, entry in db.execute(stmt).all():
+        debit = Decimal(str(line.debit or 0))
+        credit = Decimal(str(line.credit or 0))
+        debit_total += debit
+        credit_total += credit
+        running += debit - credit
+        rows.append({
+            "entry_id": entry.id,
+            "entry_number": entry.entry_number,
+            "entry_date": entry.entry_date,
+            "description": line.description or entry.description,
+            "debit": debit,
+            "credit": credit,
+            "balance": running,
+        })
+
     return {
         "party_id": party.id,
         "party_name": party.name,
         "party_type": party.party_type,
-        "total_debit": debit,
-        "total_credit": credit,
-        "balance": debit - credit,
+        "account_id": party.account_id,
+        "from_date": from_date,
+        "to_date": to_date,
+        "opening_balance": opening,
+        "total_debit": debit_total,
+        "total_credit": credit_total,
+        "balance": running,
+        "rows": rows,
     }
