@@ -48,6 +48,11 @@ DEFAULT_PERMISSIONS = [
     ("accounting.dimensions.manage", "إدارة الأبعاد المحاسبية"),
     ("accounting.periods.manage", "إدارة الفترات المحاسبية"),
     ("audit.read", "عرض سجل التدقيق"),
+    ("ar_ap.view", "عرض الذمم والمدفوعات"),
+    ("ar_ap.create", "إنشاء الذمم والمدفوعات"),
+    ("ar_ap.post", "ترحيل الذمم والمدفوعات"),
+    ("ar_ap.cancel", "إلغاء الذمم والمدفوعات"),
+    ("ar_ap.allocate", "تخصيص المدفوعات على الفواتير"),
 ]
 
 def seed() -> None:
