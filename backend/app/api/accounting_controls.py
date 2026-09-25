@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.accounting_dimension import AccountingDimension
+from app.models.ar_ap import Invoice, Payment
 from app.models.audit_log import AuditLog
 from app.models.expense import Expense
 from app.models.fiscal_period import FiscalPeriod
@@ -202,6 +203,28 @@ def close_period(period_id: int, db: Session = Depends(get_db), user: User = Dep
         )
         if branch_draft_expense is not None:
             raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد مصروفات مسودة ضمن الفترة")
+
+    draft_invoice = db.scalar(
+        select(Invoice.id).where(
+            Invoice.status == "draft",
+            Invoice.invoice_date >= period.start_date,
+            Invoice.invoice_date <= period.end_date,
+            Invoice.branch_id.is_(None) if period.branch_id is None else (Invoice.branch_id == period.branch_id) | Invoice.branch_id.is_(None),
+        ).limit(1)
+    )
+    if draft_invoice is not None:
+        raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد فواتير مسودة ضمن الفترة")
+
+    draft_payment = db.scalar(
+        select(Payment.id).where(
+            Payment.status == "draft",
+            Payment.payment_date >= period.start_date,
+            Payment.payment_date <= period.end_date,
+            Payment.branch_id.is_(None) if period.branch_id is None else (Payment.branch_id == period.branch_id) | Payment.branch_id.is_(None),
+        ).limit(1)
+    )
+    if draft_payment is not None:
+        raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد مدفوعات مسودة ضمن الفترة")
 
     period.is_closed = True
     db.add(AuditLog(
