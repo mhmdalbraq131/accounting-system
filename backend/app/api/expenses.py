@@ -11,6 +11,7 @@ from app.accounting.journal_service import create_journal
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.accounting_dimension import AccountingDimension
 from app.models.expense import Expense
 from app.models.journal import JournalEntry
 from app.models.audit_log import AuditLog
@@ -30,6 +31,7 @@ class ExpenseIn(BaseModel):
     program_id: int | None = None
     expense_account_id: int | None = None
     payment_account_id: int | None = None
+    dimension_id: int | None = None
 
 
 def _branch_allowed(user: User, branch_id: int | None) -> bool:
@@ -102,6 +104,13 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
         if payload.payment_account_id == expense_account_id:
             raise HTTPException(400, "حساب المصروف وحساب الدفع يجب أن يكونا مختلفين")
 
+    if payload.dimension_id is not None:
+        dimension = db.get(AccountingDimension, payload.dimension_id)
+        if not dimension or not dimension.is_active:
+            raise HTTPException(400, "البعد المحاسبي غير موجود أو غير نشط")
+        if not _branch_allowed(user, dimension.branch_id):
+            raise HTTPException(403, "البعد المحاسبي تابع لفرع آخر")
+
     if payload.supplier_id is not None:
         supplier = db.get(Party, payload.supplier_id)
         if not supplier or supplier.party_type not in {"supplier", "both"}:
@@ -121,6 +130,7 @@ def create_expense(payload: ExpenseIn, db: Session = Depends(get_db), user: User
         program_id=payload.program_id,
         expense_account_id=expense_account_id,
         payment_account_id=payload.payment_account_id,
+        dimension_id=payload.dimension_id,
         created_by=user.id,
         branch_id=user.branch_id,
         status="draft",
@@ -150,6 +160,12 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         raise HTTPException(409, "المصروف مرتبط بقيد محاسبي مسبقًا")
 
     expense_account_id = _resolve_expense_account(db, user, expense.expense_account_id)
+    if expense.dimension_id is not None:
+        dimension = db.get(AccountingDimension, expense.dimension_id)
+        if not dimension or not dimension.is_active:
+            raise HTTPException(400, "البعد المحاسبي للمصروف غير موجود أو غير نشط")
+        if not _branch_allowed(user, dimension.branch_id):
+            raise HTTPException(403, "البعد المحاسبي للمصروف تابع لفرع آخر")
     credit_account_id = expense.payment_account_id
     if credit_account_id is None and expense.supplier_id is not None:
         supplier = db.get(Party, expense.supplier_id)
@@ -173,8 +189,8 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
             entry_date=expense.expense_date,
             description=expense.description,
             lines=[
-                {"account_id": expense_account_id, "debit": expense.amount, "credit": Decimal("0")},
-                {"account_id": credit_account_id, "debit": Decimal("0"), "credit": expense.amount},
+                {"account_id": expense_account_id, "dimension_id": expense.dimension_id, "debit": expense.amount, "credit": Decimal("0")},
+                {"account_id": credit_account_id, "dimension_id": expense.dimension_id, "debit": Decimal("0"), "credit": expense.amount},
             ],
             created_by=user.id,
             branch_id=expense.branch_id,
