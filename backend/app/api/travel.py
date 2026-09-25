@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal
+from app.accounting.journal_service import create_journal, resolve_reversal_date
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
@@ -345,7 +345,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db), user: User = 
         reversal = create_journal(
             db,
             entry_number=f"REV-TRAVEL-BOOK-{booking.id}",
-            entry_date=date.today(),
+            entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),
             description=f"عكس حجز برنامج #{booking.id}",
             lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines],
             created_by=user.id,
@@ -461,7 +461,7 @@ def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depend
         reversal = create_journal(
             db,
             entry_number=f"REV-TRAVEL-VISA-{visa.id}",
-            entry_date=date.today(),
+            entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),
             description=f"عكس خدمة التأشيرة #{visa.id}",
             lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines],
             created_by=user.id,
