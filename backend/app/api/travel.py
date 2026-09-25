@@ -461,7 +461,7 @@ def cancel_visa(visa_id: int, db: Session = Depends(get_db), user: User = Depend
         reversal = create_journal(
             db,
             entry_number=f"REV-TRAVEL-VISA-{visa.id}",
-            entry_date=resolve_reversal_date(db, original.entry_date, booking.branch_id),
+            entry_date=resolve_reversal_date(db, original.entry_date, visa.branch_id),
             description=f"عكس خدمة التأشيرة #{visa.id}",
             lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines],
             created_by=user.id,
