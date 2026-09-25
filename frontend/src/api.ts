@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000/api/v1`).replace(/\/$/, "");
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem("accounting_token");
@@ -14,6 +14,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!response.ok) {
     let message = `تعذر تنفيذ العملية (${response.status})`;
     try { const body = await response.json(); message = body.detail ?? message; } catch { /* ignore */ }
+    if (response.status === 401) message = "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.";
+    else if (response.status === 403) message = `ليس لديك صلاحية لتنفيذ هذه العملية. (${message})`;
+    else if (response.status === 404) message = `المسار المطلوب غير موجود في خادم API: ${path}`;
     throw new Error(message);
   }
   return response.json() as Promise<T>;
