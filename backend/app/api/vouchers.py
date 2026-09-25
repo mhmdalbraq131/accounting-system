@@ -124,6 +124,7 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
 
 @router.get("", response_model=list[VoucherOut])
 def list_vouchers(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "vouchers.view", db)
     stmt = select(Voucher).order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((Voucher.branch_id == user.branch_id) | Voucher.branch_id.is_(None))
