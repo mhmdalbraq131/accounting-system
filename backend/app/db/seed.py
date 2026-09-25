@@ -24,6 +24,8 @@ DEFAULT_PERMISSIONS = [
     ("parties.view", "عرض الأطراف"),
     ("expenses.view", "عرض المصروفات"),
     ("accounts.create", "إضافة الحسابات"),
+    ("accounts.update", "تعديل الحسابات"),
+    ("accounts.disable", "تعطيل الحسابات"),
     ("parties.create", "إضافة الأطراف"),
     ("parties.update", "تعديل الأطراف"),
     ("parties.disable", "تعطيل الأطراف"),
