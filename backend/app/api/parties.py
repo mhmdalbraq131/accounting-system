@@ -84,7 +84,6 @@ def create_party(
     db.add(party)
     db.flush()
     db.add(AuditLog(user_id=user.id, action="create", entity_type="party", entity_id=party.id))
-    db.add(AuditLog(user_id=user.id, action="update", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -107,6 +106,7 @@ def update_party(
     _validate_account(db, payload.account_id, user)
     for key, value in payload.model_dump().items():
         setattr(party, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
@@ -138,6 +138,7 @@ def disable_party(
         raise HTTPException(404, "الطرف غير موجود")
     _validate_party_scope(party, user)
     party.is_active = False
+    db.add(AuditLog(user_id=user.id, action="disable", entity_type="party", entity_id=party.id))
     db.commit()
     db.refresh(party)
     return party
