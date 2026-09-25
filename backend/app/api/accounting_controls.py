@@ -1,7 +1,7 @@
 from datetime import date
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/accounting-controls", tags=["الضبط المحاس
 
 class DimensionCreate(BaseModel):
     dimension_type: str = "cost_center"
-    code: str
-    name_ar: str
+    code: str = Field(min_length=1, max_length=40)
+    name_ar: str = Field(min_length=1, max_length=200)
     branch_id: int | None = None
 
 
@@ -78,6 +78,33 @@ class FiscalPeriodOut(FiscalPeriodCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+@router.post("/dimensions/{dimension_id}/disable", response_model=DimensionOut)
+def disable_dimension(
+    dimension_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_permission(user, "accounting.dimensions.manage", db)
+    row = db.get(AccountingDimension, dimension_id)
+    if not row:
+        raise HTTPException(404, "البعد المحاسبي غير موجود")
+    if user.branch_id is not None and row.branch_id not in (None, user.branch_id):
+        raise HTTPException(403, "البعد المحاسبي تابع لفرع آخر")
+    if not row.is_active:
+        return row
+    row.is_active = False
+    db.add(AuditLog(
+        user_id=user.id,
+        action="disable",
+        entity_type="accounting_dimension",
+        entity_id=row.id,
+        details=json.dumps({"code": row.code}, ensure_ascii=False),
+    ))
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 @router.get("/periods", response_model=list[FiscalPeriodOut])
 def list_periods(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     stmt = select(FiscalPeriod).order_by(FiscalPeriod.start_date.desc())
@@ -99,7 +126,7 @@ def create_period(payload: FiscalPeriodCreate, db: Session = Depends(get_db), us
     overlap = select(FiscalPeriod).where(
         FiscalPeriod.start_date <= payload.end_date,
         FiscalPeriod.end_date >= payload.start_date,
-        FiscalPeriod.branch_id.is_(None) if branch_id is None else FiscalPeriod.branch_id == branch_id,
+        FiscalPeriod.branch_id == branch_id if branch_id is None else FiscalPeriod.branch_id.in_([None, branch_id]),
     )
     if db.scalar(overlap):
         raise HTTPException(409, "الفترة تتداخل مع فترة محاسبية موجودة")
@@ -145,6 +172,16 @@ def close_period(period_id: int, db: Session = Depends(get_db), user: User = Dep
     )
     if draft_expense is not None:
         raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد مصروفات مسودة ضمن الفترة")
+    if period.branch_id is None:
+        branch_draft_expense = db.scalar(
+            select(Expense.id).where(
+                Expense.status == "draft",
+                Expense.expense_date >= period.start_date,
+                Expense.expense_date <= period.end_date,
+            ).limit(1)
+        )
+        if branch_draft_expense is not None:
+            raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد مصروفات مسودة ضمن الفترة")
 
     period.is_closed = True
     db.add(AuditLog(
