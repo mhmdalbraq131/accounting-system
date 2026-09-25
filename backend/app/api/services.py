@@ -7,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounting.journal_service import create_journal
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.party import Party
 from app.models.service_order import ServiceOrder
 from app.models.settings import SystemSetting
@@ -74,6 +75,7 @@ def _account_setting(db: Session, user: User, service_type: str, kind: str) -> A
 
 @router.get("/{service_type}")
 def list_services(service_type: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "services.view", db)
     if service_type not in SERVICE_LABELS: raise HTTPException(400, "نوع الخدمة غير مدعوم")
     stmt = select(ServiceOrder).where(ServiceOrder.service_type == service_type).order_by(ServiceOrder.id.desc())
     if user.branch_id is not None: stmt = stmt.where((ServiceOrder.branch_id == user.branch_id) | ServiceOrder.branch_id.is_(None))
@@ -82,6 +84,7 @@ def list_services(service_type: str, db: Session = Depends(get_db), user: User =
 
 @router.post("", status_code=201)
 def create_service(payload: ServiceCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "services.create", db)
     if payload.service_type not in SERVICE_LABELS: raise HTTPException(400, "نوع الخدمة غير مدعوم")
     if db.scalar(select(ServiceOrder).where(ServiceOrder.reference_no == payload.reference_no)): raise HTTPException(409, "رقم الخدمة مستخدم مسبقًا")
     if payload.agent_id is None and payload.customer_id is None: raise HTTPException(400, "يجب تحديد الوكيل أو العميل المباشر")
@@ -95,11 +98,12 @@ def create_service(payload: ServiceCreate, db: Session = Depends(get_db), user: 
     if payload.supplier_cost > 0: _party(db, user, payload.supplier_id, {"supplier", "both"}, "المورد", "liability")
     row = ServiceOrder(**payload.model_dump(), paid_amount=Decimal("0"), remaining_amount=payload.sale_price, profit=payload.sale_price-payload.supplier_cost,
                        status="draft", branch_id=user.branch_id, created_by=user.id, created_at=datetime.utcnow())
-    db.add(row); db.commit(); db.refresh(row); return row
+    db.add(row); db.flush(); db.add(AuditLog(user_id=user.id, action="create", entity_type="service_order", entity_id=row.id, details=f"إنشاء خدمة {SERVICE_LABELS[payload.service_type]} #{row.id}")); db.commit(); db.refresh(row); return row
 
 
 @router.post("/{service_type}/{service_id}/post")
 def post_service(service_type: str, service_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "services.post", db)
     if service_type not in SERVICE_LABELS: raise HTTPException(400, "نوع الخدمة غير مدعوم")
     row = db.get(ServiceOrder, service_id)
     if not row or row.service_type != service_type: raise HTTPException(404, "الخدمة غير موجودة")
@@ -118,11 +122,12 @@ def post_service(service_type: str, service_id: int, db: Session = Depends(get_d
         entry = create_journal(db, entry_number=f"{service_type.upper()}-{row.id}", entry_date=row.service_date, description=row.description, lines=lines, created_by=user.id, branch_id=row.branch_id, status="posted")
     except ValueError as exc:
         db.rollback(); raise HTTPException(400, str(exc))
-    entry.posted_at = datetime.utcnow(); row.journal_entry_id = entry.id; row.status = "posted"; db.commit(); db.refresh(row); return row
+    entry.posted_at = datetime.utcnow(); row.journal_entry_id = entry.id; row.status = "posted"; db.add(AuditLog(user_id=user.id, action="post", entity_type="service_order", entity_id=row.id, details=f"ترحيل خدمة {SERVICE_LABELS[service_type]} #{row.id}")); db.commit(); db.refresh(row); return row
 
 
 @router.post("/{service_type}/{service_id}/cancel")
 def cancel_service(service_type: str, service_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "services.cancel", db)
     if service_type not in SERVICE_LABELS: raise HTTPException(400, "نوع الخدمة غير مدعوم")
     row = db.get(ServiceOrder, service_id)
     if not row or row.service_type != service_type: raise HTTPException(404, "الخدمة غير موجودة")
@@ -138,4 +143,4 @@ def cancel_service(service_type: str, service_id: int, db: Session = Depends(get
                            lines=[{"account_id": line.account_id, "debit": line.credit, "credit": line.debit} for line in original.lines], created_by=user.id, branch_id=row.branch_id, status="posted")
         except ValueError as exc:
             db.rollback(); raise HTTPException(400, str(exc))
-    row.status = "cancelled"; db.commit(); db.refresh(row); return row
+    row.status = "cancelled"; db.add(AuditLog(user_id=user.id, action="cancel", entity_type="service_order", entity_id=row.id, details=f"إلغاء خدمة {SERVICE_LABELS[service_type]} #{row.id}")); db.commit(); db.refresh(row); return row
