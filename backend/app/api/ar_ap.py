@@ -51,6 +51,12 @@ def _account(db, account_id, user):
     if user.branch_id is not None and account.branch_id not in (None,user.branch_id): raise HTTPException(403,"الحساب تابع لفرع آخر")
     return account
 
+def _require_type(account: Account, allowed: set[str], label: str) -> Account:
+    if account.account_type not in allowed:
+        raise HTTPException(400, f"{label} يجب أن يكون من نوع: {', '.join(sorted(allowed))}")
+    return account
+
+
 def _party(db, party_id, user):
     party=db.get(Party,party_id)
     if not party or not party.is_active: raise HTTPException(400,"الطرف غير موجود أو غير نشط")
@@ -88,6 +94,12 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db), user: 
     if db.scalar(select(Invoice.id).where(Invoice.invoice_number==payload.invoice_number)): raise HTTPException(400,"رقم الفاتورة مستخدم مسبقًا")
     party=_party(db,payload.party_id,user)
     ar=_account(db,payload.receivable_account_id,user); income=_account(db,payload.revenue_account_id,user)
+    if payload.invoice_type=="sales":
+        _require_type(ar, {"asset"}, "حساب الذمم المدينة")
+        _require_type(income, {"revenue"}, "حساب الإيراد")
+    else:
+        _require_type(ar, {"liability"}, "حساب الذمم الدائنة")
+        _require_type(income, {"expense", "cost_of_service"}, "حساب تكلفة المشتريات")
     if payload.invoice_type=="sales" and party.party_type not in ("customer","agent"): raise HTTPException(400,"فاتورة المبيعات يجب أن تكون لعميل أو وكيل")
     if payload.invoice_type=="purchase" and party.party_type not in ("supplier","agent"): raise HTTPException(400,"فاتورة المشتريات يجب أن تكون لمورد أو وكيل")
     if payload.due_date and payload.due_date < payload.invoice_date: raise HTTPException(400,"تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة")
@@ -107,6 +119,12 @@ def post_invoice(invoice_id:int,db:Session=Depends(get_db),user:User=Depends(get
     if not _branch_ok(user,x.branch_id): raise HTTPException(403,"الفاتورة تابعة لفرع آخر")
     if x.status!="draft": raise HTTPException(400,"لا يمكن ترحيل الفاتورة بهذه الحالة")
     ar=_account(db,x.receivable_account_id,user); income=_account(db,x.revenue_account_id,user)
+    if x.invoice_type=="sales":
+        _require_type(ar, {"asset"}, "حساب الذمم المدينة")
+        _require_type(income, {"revenue"}, "حساب الإيراد")
+    else:
+        _require_type(ar, {"liability"}, "حساب الذمم الدائنة")
+        _require_type(income, {"expense", "cost_of_service"}, "حساب تكلفة المشتريات")
     if x.invoice_type=="sales":
         debit,credit=ar.id,income.id
     else:
@@ -155,7 +173,16 @@ def create_payment(payload:PaymentCreate,db:Session=Depends(get_db),user:User=De
     require_permission(user,"ar_ap.create",db)
     if db.scalar(select(Payment.id).where(Payment.payment_number==payload.payment_number)): raise HTTPException(400,"رقم الدفعة مستخدم مسبقًا")
     if payload.source_account_id==payload.target_account_id: raise HTTPException(400,"حساب المصدر والهدف يجب أن يكونا مختلفين")
-    _account(db,payload.source_account_id,user); _account(db,payload.target_account_id,user)
+    source=_account(db,payload.source_account_id,user); target=_account(db,payload.target_account_id,user)
+    if payload.payment_type == "transfer":
+        _require_type(source, {"asset"}, "حساب المصدر")
+        _require_type(target, {"asset"}, "حساب الهدف")
+    elif payload.payment_type == "receipt":
+        _require_type(source, {"asset"}, "حساب الذمم/المصدر")
+        _require_type(target, {"asset"}, "حساب الصندوق أو البنك")
+    else:
+        _require_type(source, {"asset"}, "حساب الصندوق أو البنك")
+        _require_type(target, {"liability"}, "حساب الذمم الدائنة")
     if payload.party_id is not None: _party(db,payload.party_id,user)
     if payload.payment_type in ("receipt","payment") and payload.party_id is None: raise HTTPException(400,"الطرف مطلوب للقبض أو الصرف")
     x=Payment(payment_number=payload.payment_number,payment_type=payload.payment_type,party_id=payload.party_id,
