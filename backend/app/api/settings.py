@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.role import Role, UserRole
 from app.models.settings import SystemSetting
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -141,6 +142,7 @@ def update_setting(key: str, payload: SettingUpdate, db: Session = Depends(get_d
         except ValueError:
             raise HTTPException(status_code=422, detail="القيمة يجب أن تكون رقمًا صحيحًا")
     setting.value = payload.value
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="setting", entity_id=setting.id))
     db.commit()
     db.refresh(setting)
     return setting
