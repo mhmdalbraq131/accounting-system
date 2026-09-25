@@ -120,6 +120,7 @@ export type AuditLog = { id:number; user_id:number|null; action:string; entity_t
 
 export const getAccountingDimensions=()=>api<AccountingDimension[]>("/accounting-controls/dimensions");
 export const createAccountingDimension=(payload:Partial<AccountingDimension>)=>api<AccountingDimension>("/accounting-controls/dimensions",{method:"POST",body:JSON.stringify(payload)});
+export const disableAccountingDimension=(id:number)=>api<AccountingDimension>(`/accounting-controls/dimensions/${id}/disable`,{method:"POST"});
 export const getFiscalPeriods=()=>api<FiscalPeriod[]>("/accounting-controls/periods");
 export const createFiscalPeriod=(payload:Partial<FiscalPeriod>)=>api<FiscalPeriod>("/accounting-controls/periods",{method:"POST",body:JSON.stringify(payload)});
 export const closeFiscalPeriod=(id:number)=>api<{id:number;is_closed:boolean}>(`/accounting-controls/periods/${id}/close`,{method:"POST"});
