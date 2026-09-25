@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
+from app.api.accounting_controls import router as accounting_controls_router
 from app.api.branches import router as branches_router
 from app.api.currencies import router as currencies_router
 from app.api.financial import router as financial_router
@@ -21,7 +22,7 @@ from app.core.config import settings
 
 app = FastAPI(
     title="Accounting System API",
-    version="0.9.1",
+    version="0.9.2",
     description="واجهة API لنظام محاسبي مستقل لوكالة الحج والعمرة والسفر",
 )
 
@@ -39,6 +40,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
+app.include_router(accounting_controls_router, prefix="/api/v1")
 app.include_router(branches_router, prefix="/api/v1")
 app.include_router(currencies_router, prefix="/api/v1")
 app.include_router(financial_router, prefix="/api/v1")
@@ -55,11 +57,9 @@ app.include_router(expenses_router, prefix="/api/v1")
 app.include_router(reports_router, prefix="/api/v1")
 app.include_router(party_services_report_router, prefix="/api/v1")
 
-
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
 
 @app.get("/api/v1", tags=["system"])
 def api_info() -> dict[str, str]:
