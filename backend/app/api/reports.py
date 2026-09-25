@@ -250,7 +250,8 @@ def profit_loss(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(user, "reports.view", db)\n    stmt = (
+    require_permission(user, "reports.view", db)
+    stmt = (
         select(Account.id, Account.code, Account.name_ar, Account.account_type,
                func.coalesce(func.sum(JournalLine.debit), 0).label("debit"),
                func.coalesce(func.sum(JournalLine.credit), 0).label("credit"))
@@ -298,7 +299,8 @@ def cash_movement(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(user, "reports.view", db)\n    stmt = select(FinancialAccount).where(FinancialAccount.is_active.is_(True))
+    require_permission(user, "reports.view", db)
+    stmt = select(FinancialAccount).where(FinancialAccount.is_active.is_(True))
     if user.branch_id is not None:
         stmt = stmt.where((FinancialAccount.branch_id == user.branch_id) | FinancialAccount.branch_id.is_(None))
     financial_accounts = db.scalars(stmt.order_by(FinancialAccount.name)).all()
@@ -345,7 +347,8 @@ def party_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(user, "reports.view", db)\n    party = db.get(Party, party_id)
+    require_permission(user, "reports.view", db)
+    party = db.get(Party, party_id)
     if not party:
         raise HTTPException(404, "الطرف غير موجود")
     if user.branch_id is not None and party.branch_id not in (None, user.branch_id):
