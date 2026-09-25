@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.accounting.journal_service import create_journal
+from app.accounting.journal_service import create_journal, resolve_reversal_date
 from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
@@ -186,7 +186,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         entry = create_journal(
             db,
             entry_number=f"EXP-JV-{expense.expense_number}",
-            entry_date=expense.expense_date,
+            entry_date=resolve_reversal_date(db, original.entry_date, expense.branch_id),
             description=expense.description,
             lines=[
                 {"account_id": expense_account_id, "dimension_id": expense.dimension_id, "debit": expense.amount, "credit": Decimal("0")},
