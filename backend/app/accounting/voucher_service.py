@@ -59,8 +59,16 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
     destination = db.get(Account, destination_account_id)
     if not source or not source.is_active or not destination or not destination.is_active:
         raise ValueError("أحد الحسابات المحددة غير موجود أو غير نشط")
+    if branch_id is not None:
+        if source.branch_id not in (None, branch_id) or destination.branch_id not in (None, branch_id):
+            raise ValueError("أحد الحسابات المحددة تابع لفرع آخر")
     source_financial = _financial_account_for_ledger(db, source_account_id)
     destination_financial = _financial_account_for_ledger(db, destination_account_id)
+    if branch_id is not None:
+        for financial in (source_financial, destination_financial):
+            if financial is not None and financial.branch_id not in (None, branch_id):
+                raise ValueError("الحساب المالي تابع لفرع آخر")
+
     if voucher_type == "transfer":
         if not source_financial or not destination_financial:
             raise ValueError("سند التحويل يجب أن يكون بين صندوق أو بنك أو محفظة")
@@ -192,6 +200,10 @@ def _validate_linked_voucher(db: Session, voucher: Voucher) -> None:
         raise ValueError("ربط الخدمة متاح حاليًا مع سندات القبض والصرف فقط")
 
     row = _get_linked(db, voucher)
+    if voucher.branch_id is not None:
+        linked_branch = getattr(row, "branch_id", None)
+        if linked_branch not in (None, voucher.branch_id):
+            raise ValueError("الخدمة المرتبطة بالسند تابعة لفرع آخر")
     if getattr(row, "journal_entry_id", None) is None:
         raise ValueError("يجب ترحيل الخدمة قبل ربط سند مالي بها")
     if getattr(row, "status", None) == "cancelled":
