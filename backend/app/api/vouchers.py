@@ -138,7 +138,7 @@ def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(ge
     if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
-        post_voucher(db, voucher); db.commit(); db.refresh(voucher); return voucher
+        post_voucher(db, voucher, posted_by=user.id); db.commit(); db.refresh(voucher); return voucher
     except ValueError as exc:
         db.rollback(); raise HTTPException(status_code=400, detail=str(exc))
 
@@ -150,7 +150,7 @@ def cancel(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(
     if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
     try:
-        cancel_voucher(db, voucher); db.commit(); db.refresh(voucher); return voucher
+        cancel_voucher(db, voucher, cancelled_by=user.id); db.commit(); db.refresh(voucher); return voucher
     except ValueError as exc:
         db.rollback(); raise HTTPException(status_code=400, detail=str(exc))
 
