@@ -9,6 +9,7 @@ from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.account import Account
 from app.models.expense import Expense
+from app.models.fiscal_period import FiscalPeriod
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry, JournalLine
 from app.models.settings import SystemSetting
@@ -506,6 +507,16 @@ def balance_sheet(
         result_stmt = result_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
     if as_of_date:
         result_stmt = result_stmt.where(JournalEntry.entry_date <= as_of_date)
+    if as_of_date:
+        fiscal_period = db.scalar(
+            select(FiscalPeriod).where(
+                FiscalPeriod.start_date <= as_of_date,
+                FiscalPeriod.end_date >= as_of_date,
+                FiscalPeriod.branch_id.is_(None) if user.branch_id is None else FiscalPeriod.branch_id.in_([None, user.branch_id]),
+            ).order_by(FiscalPeriod.branch_id.desc().nulls_last())
+        )
+        if fiscal_period:
+            result_stmt = result_stmt.where(JournalEntry.entry_date >= fiscal_period.start_date)
     current_result = Decimal(str(db.scalar(result_stmt) or 0))
     if current_result:
         sections["equity"].append({
