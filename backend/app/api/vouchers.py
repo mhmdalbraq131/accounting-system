@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.accounting.voucher_service import cancel_voucher, create_voucher, post_voucher
 from app.db.session import get_db
 from app.models.user import User
@@ -81,6 +81,7 @@ def _base_currency(db: Session) -> Currency | None:
 
 @router.post("", response_model=VoucherOut, status_code=201)
 def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "vouchers.create", db)
     if payload.voucher_type not in {"receipt", "payment", "transfer"}:
         raise HTTPException(status_code=400, detail="نوع السند غير مدعوم")
     if payload.linked_service_type is not None and payload.linked_service_type not in VALID_LINK_TYPES:
@@ -131,6 +132,7 @@ def list_vouchers(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("/{voucher_id}/post", response_model=VoucherOut)
 def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "vouchers.post", db)
     voucher = db.get(Voucher, voucher_id)
     if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
@@ -142,6 +144,7 @@ def post(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(ge
 
 @router.post("/{voucher_id}/cancel", response_model=VoucherOut)
 def cancel(voucher_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "vouchers.cancel", db)
     voucher = db.get(Voucher, voucher_id)
     if not voucher: raise HTTPException(status_code=404, detail="السند غير موجود")
     if user.branch_id is not None and voucher.branch_id not in (None, user.branch_id): raise HTTPException(status_code=403, detail="السند تابع لفرع آخر")
