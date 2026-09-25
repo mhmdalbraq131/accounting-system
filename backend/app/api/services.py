@@ -52,7 +52,7 @@ def _party(db: Session, user: User, party_id: int | None, allowed: set[str], lab
 
 
 def _account_setting(db: Session, user: User, service_type: str, kind: str) -> Account:
-    prefix = SERVICE_LABELS[service_type]; key = f"{service_type}_{kind}_account_id"; expected = "revenue" if kind == "revenue" else "expense"
+    prefix = SERVICE_LABELS[service_type]; key = f"{service_type}_{kind}_account_id"; expected = "revenue" if kind == "revenue" else "cost_of_service"
     raw = db.scalar(select(SystemSetting.value).where(SystemSetting.key == key)); account = None
     if raw:
         try: account = db.get(Account, int(raw))
