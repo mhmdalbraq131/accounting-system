@@ -495,3 +495,103 @@ def balance_sheet(
         "username": user.username,
         "branch_id": user.branch_id,
     }
+
+
+@router.get("/service-profitability")
+def service_profitability(
+    service_type: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """تشغيلية الوكالة: ربحية الحج والعمرة والطيران والباصات والتأشيرات والخدمات الإضافية."""
+    require_permission(user, "reports.view", db)
+    rows = []
+
+    booking_stmt = select(ProgramBooking, TravelProgram).join(TravelProgram, ProgramBooking.program_id == TravelProgram.id).where(
+        ProgramBooking.status.in_(["posted", "confirmed"])
+    )
+    if user.branch_id is not None:
+        booking_stmt = booking_stmt.where((ProgramBooking.branch_id == user.branch_id) | ProgramBooking.branch_id.is_(None))
+    for booking, program in db.execute(booking_stmt).all():
+        kind = program.program_type
+        if service_type and service_type != kind:
+            continue
+        d = booking.booked_at.date()
+        if from_date and d < from_date or to_date and d > to_date:
+            continue
+        rows.append({
+            "source": "program_booking",
+            "service_type": kind,
+            "reference_id": booking.id,
+            "date": d,
+            "sale_amount": booking.sale_price,
+            "cost_amount": booking.supplier_cost,
+            "profit": booking.sale_price - booking.supplier_cost,
+            "paid_amount": booking.paid_amount,
+            "remaining_amount": booking.remaining_amount,
+            "status": booking.status,
+        })
+
+    service_stmt = select(ServiceOrder).where(ServiceOrder.status.in_(["posted", "approved"]))
+    if user.branch_id is not None:
+        service_stmt = service_stmt.where((ServiceOrder.branch_id == user.branch_id) | ServiceOrder.branch_id.is_(None))
+    for item in db.scalars(service_stmt).all():
+        if service_type and service_type != item.service_type:
+            continue
+        if from_date and item.service_date < from_date or to_date and item.service_date > to_date:
+            continue
+        rows.append({
+            "source": "service_order",
+            "service_type": item.service_type,
+            "reference_id": item.id,
+            "date": item.service_date,
+            "sale_amount": item.sale_price,
+            "cost_amount": item.supplier_cost,
+            "profit": item.sale_price - item.supplier_cost,
+            "paid_amount": item.paid_amount,
+            "remaining_amount": item.remaining_amount,
+            "status": item.status,
+        })
+
+    visa_stmt = select(VisaService).where(VisaService.status.in_(["approved", "completed"]))
+    if user.branch_id is not None:
+        visa_stmt = visa_stmt.where((VisaService.branch_id == user.branch_id) | VisaService.branch_id.is_(None))
+    for item in db.scalars(visa_stmt).all():
+        if service_type and service_type not in ("visa", "work_visa"):
+            continue
+        d = item.created_at.date()
+        if from_date and d < from_date or to_date and d > to_date:
+            continue
+        rows.append({
+            "source": "visa_service",
+            "service_type": "visa",
+            "reference_id": item.id,
+            "date": d,
+            "sale_amount": item.sale_price,
+            "cost_amount": item.supplier_cost,
+            "profit": item.sale_price - item.supplier_cost,
+            "paid_amount": Decimal("0"),
+            "remaining_amount": item.sale_price,
+            "status": item.status,
+        })
+
+    totals = {
+        "sale_amount": sum((Decimal(str(x["sale_amount"])) for x in rows), Decimal("0")),
+        "cost_amount": sum((Decimal(str(x["cost_amount"])) for x in rows), Decimal("0")),
+        "profit": sum((Decimal(str(x["profit"])) for x in rows), Decimal("0")),
+        "paid_amount": sum((Decimal(str(x["paid_amount"])) for x in rows), Decimal("0")),
+        "remaining_amount": sum((Decimal(str(x["remaining_amount"])) for x in rows), Decimal("0")),
+    }
+    return {
+        "service_type": service_type,
+        "from_date": from_date,
+        "to_date": to_date,
+        "rows": sorted(rows, key=lambda x: (x["date"], x["reference_id"]), reverse=True),
+        "totals": totals,
+        "count": len(rows),
+        "printed_by": user.full_name,
+        "username": user.username,
+        "branch_id": user.branch_id,
+    }
