@@ -1,0 +1,25 @@
+import React,{useEffect,useState} from "react";
+import {createExpense,getExpenses,postExpense,cancelExpense,getAccounts,getParties,getAccountingDimensions,type AccountingDimension} from "./api";
+
+export default function ExpensesPage(){
+ const [rows,setRows]=useState<any[]>([]),[accounts,setAccounts]=useState<any[]>([]),[suppliers,setSuppliers]=useState<any[]>([]),[dimensions,setDimensions]=useState<AccountingDimension[]>([]);
+ const [form,setForm]=useState({expense_date:new Date().toISOString().slice(0,10),category:"",description:"",amount:"",supplier_id:"",expense_account_id:"",payment_account_id:"",dimension_id:""});
+ const [error,setError]=useState(""),[busy,setBusy]=useState(false);
+ async function load(){const [e,a,s,d]=await Promise.all([getExpenses(),getAccounts(),getParties("supplier"),getAccountingDimensions()]);setRows(e);setAccounts(a);setSuppliers(s);setDimensions(d)}
+ useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"تعذر تحميل المصروفات"))},[]);
+ async function save(ev:React.FormEvent){ev.preventDefault();setBusy(true);setError("");try{await createExpense({expense_date:form.expense_date,category:form.category,description:form.description,amount:Number(form.amount),supplier_id:form.supplier_id?Number(form.supplier_id):undefined,expense_account_id:form.expense_account_id?Number(form.expense_account_id):undefined,payment_account_id:form.payment_account_id?Number(form.payment_account_id):undefined,dimension_id:form.dimension_id?Number(form.dimension_id):undefined});setForm({...form,category:"",description:"",amount:"",supplier_id:""});await load()}catch(e){setError(e instanceof Error?e.message:"تعذر حفظ المصروف")}finally{setBusy(false)}}
+ async function act(fn:(id:number)=>Promise<any>,id:number){setBusy(true);setError("");try{await fn(id);await load()}catch(e){setError(e instanceof Error?e.message:"تعذر تنفيذ العملية")}finally{setBusy(false)}}
+ return <main className="page" dir="rtl"><div className="welcome"><div><span className="eyebrow">المصروفات</span><h2>إدارة المصروفات</h2><p>تسجيل المصروف كمسودة ثم ترحيله محاسبيًا، مع ربط المورد ومركز التكلفة.</p></div></div>{error&&<div className="error-banner">{error}</div>}
+ <section className="panel"><div className="panel-head"><h3>مصروف جديد</h3></div><form className="form-grid" onSubmit={save}>
+ <label><span>التاريخ</span><input type="date" value={form.expense_date} onChange={e=>setForm({...form,expense_date:e.target.value})} required/></label>
+ <label><span>التصنيف</span><input value={form.category} onChange={e=>setForm({...form,category:e.target.value})} required/></label>
+ <label><span>المبلغ</span><input type="number" min="0.01" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} required/></label>
+ <label><span>المورد</span><select value={form.supplier_id} onChange={e=>setForm({...form,supplier_id:e.target.value})}><option value="">بدون مورد</option>{suppliers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+ <label><span>حساب المصروف</span><select value={form.expense_account_id} onChange={e=>setForm({...form,expense_account_id:e.target.value})}><option value="">تحديد تلقائي</option>{accounts.filter(a=>a.is_active&&["expense","cost_of_service"].includes(a.account_type)).map(a=><option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</select></label>
+ <label><span>حساب الدفع</span><select value={form.payment_account_id} onChange={e=>setForm({...form,payment_account_id:e.target.value})}><option value="">استحقاق على المورد</option>{accounts.filter(a=>a.is_active&&a.account_type==="asset").map(a=><option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</select></label>
+ <label><span>مركز التكلفة / البعد</span><select value={form.dimension_id} onChange={e=>setForm({...form,dimension_id:e.target.value})}><option value="">بدون</option>{dimensions.map(d=><option key={d.id} value={d.id}>{d.code} - {d.name_ar}</option>)}</select></label>
+ <label style={{gridColumn:"1/-1"}}><span>البيان</span><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} required/></label>
+ <div className="form-actions"><button className="primary" disabled={busy}>{busy?"جارٍ الحفظ…":"حفظ كمسودة"}</button></div></form></section>
+ <section className="panel"><div className="panel-head"><h3>سجل المصروفات ({rows.length})</h3></div><div className="table-wrap"><table><thead><tr><th>الرقم</th><th>التاريخ</th><th>التصنيف</th><th>البيان</th><th>المبلغ</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>{rows.map(x=><tr key={x.id}><td>{x.expense_number}</td><td>{x.expense_date}</td><td>{x.category}</td><td>{x.description}</td><td>{Number(x.amount||0).toLocaleString("ar-YE",{minimumFractionDigits:2})}</td><td>{x.status==="posted"?"مرحّل":x.status==="cancelled"?"ملغى":"مسودة"}</td><td>{x.status==="draft"?<button className="secondary" onClick={()=>void act(postExpense,x.id)}>ترحيل</button>:x.status==="posted"?<button className="link" onClick={()=>void act(cancelExpense,x.id)}>إلغاء</button>:"—"}</td></tr>)}</tbody></table></div></section>
+ </main>
+}
