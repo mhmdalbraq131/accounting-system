@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.branch import Branch
 from app.models.role import Permission, Role, RolePermission, UserRole
 from app.models.user import User
+from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/users", tags=["المستخدمون والصلاحيات"])
 
@@ -111,6 +112,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user: User =
         if not db.get(Role, role_id):
             raise HTTPException(400, "الدور غير موجود")
         db.add(UserRole(user_id=new_user.id, role_id=role_id))
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="user", entity_id=new_user.id))
     db.commit()
     db.refresh(new_user)
     return _user_out(new_user, db)
