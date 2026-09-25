@@ -11,6 +11,7 @@ from app.models.account import Account
 from app.models.expense import Expense
 from app.models.financial import FinancialAccount
 from app.models.journal import JournalEntry, JournalLine
+from app.models.settings import SystemSetting
 from app.models.party import Party
 from app.models.travel import ProgramBooking, VisaService
 from app.models.user import User
@@ -63,6 +64,12 @@ def financial_summary(
         base = base.where(JournalEntry.entry_date <= to_date)
 
     rows = db.execute(base).scalars().all()
+    configured_cost_ids = set()
+    for value in db.scalars(select(SystemSetting.value).where(SystemSetting.key.like("%_cost_account_id"))).all():
+        try:
+            configured_cost_ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
     revenue = Decimal("0")
     service_cost = Decimal("0")
     operating_expenses = Decimal("0")
@@ -70,7 +77,7 @@ def financial_summary(
         account = db.get(Account, line.account_id)
         if account.account_type == "revenue":
             revenue += Decimal(str(line.credit or 0)) - Decimal(str(line.debit or 0))
-        elif account.account_type == "cost_of_service":
+        elif account.account_type == "cost_of_service" or account.id in configured_cost_ids:
             service_cost += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
         elif account.account_type == "expense":
             operating_expenses += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
