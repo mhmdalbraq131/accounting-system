@@ -58,6 +58,7 @@ def update_branch(branch_id: int, payload: BranchIn, db: Session = Depends(get_d
             b.is_main = False
     for key, value in payload.model_dump().items():
         setattr(branch, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="branch", entity_id=branch.id))
     db.commit()
     db.refresh(branch)
     return branch
