@@ -37,7 +37,13 @@ def _resolve_period(db: Session, entry_date, branch_id: int | None, fiscal_perio
             FiscalPeriod.branch_id.is_(None) if branch_id is None else FiscalPeriod.branch_id.in_([None, branch_id]),
         ).order_by(FiscalPeriod.branch_id.desc().nulls_last())
     )
-    return period
+    if period is not None:
+        return period
+
+    configured_periods = db.scalar(select(FiscalPeriod.id).limit(1))
+    if configured_periods is not None:
+        raise ValueError("لا توجد فترة محاسبية مفتوحة تغطي تاريخ القيد")
+    return None
 
 
 def create_journal(
