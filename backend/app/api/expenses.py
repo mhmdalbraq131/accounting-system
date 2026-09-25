@@ -186,7 +186,7 @@ def post_expense(expense_id: int, db: Session = Depends(get_db), user: User = De
         entry = create_journal(
             db,
             entry_number=f"EXP-JV-{expense.expense_number}",
-            entry_date=resolve_reversal_date(db, original.entry_date, expense.branch_id),
+            entry_date=expense.expense_date,
             description=expense.description,
             lines=[
                 {"account_id": expense_account_id, "dimension_id": expense.dimension_id, "debit": expense.amount, "credit": Decimal("0")},
@@ -232,7 +232,7 @@ def cancel_expense(expense_id: int, db: Session = Depends(get_db), user: User = 
         reversal = create_journal(
             db,
             entry_number=f"REV-EXP-{expense.expense_number}",
-            entry_date=expense.expense_date,
+            entry_date=resolve_reversal_date(db, original.entry_date, expense.branch_id),
             description=f"عكس المصروف {expense.expense_number}: {expense.description}",
             lines=[
                 {"account_id": line.account_id, "dimension_id": line.dimension_id, "debit": line.credit, "credit": line.debit}
