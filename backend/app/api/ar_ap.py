@@ -205,6 +205,34 @@ def allocate_payment(payment_id:int,payload:AllocationCreate,db:Session=Depends(
     db.add(AuditLog(user_id=user.id,action="allocate",entity_type="payment",entity_id=p.id,details=json.dumps({"invoice_id":inv.id,"amount":str(payload.amount)},ensure_ascii=False)))
     db.commit(); db.refresh(p); return {"payment":_row_payment(p),"invoice":_row_invoice(inv)}
 
+@router.post("/payments/{payment_id}/allocate/{allocation_id}/reverse")
+def reverse_allocation(payment_id:int, allocation_id:int, db:Session=Depends(get_db), user:User=Depends(get_current_user)):
+    require_permission(user,"ar_ap.allocate",db)
+    p=db.get(Payment,payment_id)
+    allocation=db.get(PaymentAllocation,allocation_id)
+    if not p or not allocation or allocation.payment_id != p.id:
+        raise HTTPException(404,"التخصيص غير موجود")
+    if not _branch_ok(user,p.branch_id):
+        raise HTTPException(403,"الدفعة تابعة لفرع آخر")
+    inv=db.get(Invoice,allocation.invoice_id)
+    if not inv:
+        raise HTTPException(409,"الفاتورة المرتبطة بالتخصيص غير موجودة")
+    if p.status!="posted" or inv.status not in ("posted","paid"):
+        raise HTTPException(400,"لا يمكن عكس التخصيص في الحالة الحالية")
+    amount=Decimal(str(allocation.amount))
+    p.allocated_amount=max(Decimal("0"),Decimal(str(p.allocated_amount))-amount)
+    p.remaining_amount=Decimal(str(p.remaining_amount))+amount
+    inv.paid_amount=max(Decimal("0"),Decimal(str(inv.paid_amount))-amount)
+    inv.remaining_amount=Decimal(str(inv.remaining_amount))+amount
+    if inv.status=="paid":
+        inv.status="posted"
+    db.delete(allocation)
+    db.add(AuditLog(user_id=user.id,action="allocate_reverse",entity_type="payment",entity_id=p.id,
+                    details=json.dumps({"invoice_id":inv.id,"amount":str(amount)},ensure_ascii=False)))
+    db.commit()
+    db.refresh(p)
+    return {"payment":_row_payment(p),"invoice":_row_invoice(inv)}
+
 @router.post("/payments/{payment_id}/cancel")
 def cancel_payment(payment_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     require_permission(user,"ar_ap.cancel",db)
