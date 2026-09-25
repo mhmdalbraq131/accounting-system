@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db.session import get_db
+from app.models.account import Account
 from app.models.expense import Expense
-from app.models.journal import JournalEntry
+from app.models.journal import JournalEntry, JournalLine
 from app.models.party import Party
 from app.models.travel import Pilgrim, ProgramBooking, TravelProgram, VisaService
 from app.models.user import User
@@ -23,12 +24,30 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     visas = db.scalar(branch_filter(select(func.count(VisaService.id)), VisaService.branch_id)) or 0
     customers = db.scalar(branch_filter(select(func.count(Party.id)).where(Party.party_type == "customer", Party.is_active.is_(True)), Party.branch_id)) or 0
     suppliers = db.scalar(branch_filter(select(func.count(Party.id)).where(Party.party_type == "supplier", Party.is_active.is_(True)), Party.branch_id)) or 0
-    expenses = db.scalar(branch_filter(select(func.coalesce(func.sum(Expense.amount), 0)).where(Expense.status != "cancelled"), Expense.branch_id)) or Decimal("0")
-    revenue = db.scalar(branch_filter(select(func.coalesce(func.sum(ProgramBooking.sale_price), 0)), ProgramBooking.branch_id)) or Decimal("0")
-    service_cost = db.scalar(branch_filter(select(func.coalesce(func.sum(ProgramBooking.supplier_cost), 0)), ProgramBooking.branch_id)) or Decimal("0")
-    visa_revenue = db.scalar(branch_filter(select(func.coalesce(func.sum(VisaService.sale_price), 0)), VisaService.branch_id)) or Decimal("0")
-    visa_cost = db.scalar(branch_filter(select(func.coalesce(func.sum(VisaService.supplier_cost), 0)), VisaService.branch_id)) or Decimal("0")
-    posted_journals = db.scalar(select(func.count(JournalEntry.id)).where(JournalEntry.status == "posted")) or 0
+    journal_base = (
+        select(JournalLine)
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, JournalLine.account_id == Account.id)
+        .where(JournalEntry.status == "posted")
+    )
+    if user.branch_id is not None:
+        journal_base = journal_base.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    journal_rows = db.execute(journal_base).scalars().all()
+    revenue = Decimal("0")
+    service_cost = Decimal("0")
+    expenses = Decimal("0")
+    for line in journal_rows:
+        account = db.get(Account, line.account_id)
+        if account.account_type == "revenue":
+            revenue += Decimal(str(line.credit or 0)) - Decimal(str(line.debit or 0))
+        elif account.account_type == "cost_of_service":
+            service_cost += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
+        elif account.account_type == "expense":
+            expenses += Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0))
+    posted_stmt = select(func.count(JournalEntry.id)).where(JournalEntry.status == "posted")
+    if user.branch_id is not None:
+        posted_stmt = posted_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    posted_journals = db.scalar(posted_stmt) or 0
     return {
         "programs": programs,
         "pilgrims": pilgrims,
