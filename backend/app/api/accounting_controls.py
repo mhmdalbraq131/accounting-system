@@ -153,12 +153,32 @@ def close_period(period_id: int, db: Session = Depends(get_db), user: User = Dep
     if period.is_closed:
         return {"id": period.id, "is_closed": True, "already_closed": True}
 
-    draft_journal = db.scalar(
-        select(JournalEntry.id).where(
-            JournalEntry.fiscal_period_id == period.id,
-            JournalEntry.status == "draft",
-        ).limit(1)
+    draft_journal_stmt = select(JournalEntry.id).where(
+        JournalEntry.status == "draft",
+        (
+            JournalEntry.fiscal_period_id == period.id
+            if period.id is not None
+            else True
+        ),
     )
+    if period.branch_id is None:
+        draft_journal_stmt = draft_journal_stmt.where(
+            JournalEntry.entry_date >= period.start_date,
+            JournalEntry.entry_date <= period.end_date,
+        )
+    else:
+        draft_journal_stmt = draft_journal_stmt.where(
+            (JournalEntry.branch_id == period.branch_id) | JournalEntry.branch_id.is_(None),
+            (
+                (JournalEntry.fiscal_period_id == period.id)
+                | (
+                    JournalEntry.fiscal_period_id.is_(None)
+                    & (JournalEntry.entry_date >= period.start_date)
+                    & (JournalEntry.entry_date <= period.end_date)
+                )
+            ),
+        )
+    draft_journal = db.scalar(draft_journal_stmt.limit(1))
     if draft_journal is not None:
         raise HTTPException(409, "لا يمكن إغلاق الفترة: توجد قيود مسودة يجب ترحيلها أو إلغاؤها أولًا")
 
