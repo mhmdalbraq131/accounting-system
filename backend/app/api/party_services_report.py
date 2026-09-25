@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.party import Party
 from app.models.journal import JournalEntry, JournalLine
@@ -101,6 +101,7 @@ def party_services_report(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_permission(user, "reports.view", db)
     if service_type not in ALL_SERVICES:
         raise HTTPException(400, "نوع الخدمة غير مدعوم")
 
