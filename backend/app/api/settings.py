@@ -139,6 +139,36 @@ def list_settings(db: Session = Depends(get_db), user: User = Depends(get_curren
     return sorted(existing.values(), key=lambda s: (s.category, s.key))
 
 
+class SettingsBatchUpdate(BaseModel):
+    settings: dict[str, str] = Field(default_factory=dict)
+
+
+@router.put("/batch", response_model=list[SettingOut])
+def update_settings_batch(payload: SettingsBatchUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_admin(user, db)
+    existing = _ensure_defaults(db)
+    blocked = {"currency", "currency_name_ar"}
+    for key, value in payload.settings.items():
+        if key in blocked:
+            raise HTTPException(status_code=409, detail="العملة الأساسية تُدار من شاشة العملات ولا يمكن تغييرها من الإعدادات العامة")
+        setting = existing.get(key)
+        if not setting:
+            raise HTTPException(status_code=404, detail=f"الإعداد غير موجود: {key}")
+        if not setting.is_editable:
+            raise HTTPException(status_code=403, detail=f"الإعداد غير قابل للتعديل: {key}")
+        if setting.value_type == "boolean" and value.lower() not in {"true", "false"}:
+            raise HTTPException(status_code=422, detail=f"القيمة الخاصة بـ {key} يجب أن تكون true أو false")
+        if setting.value_type == "integer":
+            try:
+                int(value)
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"القيمة الخاصة بـ {key} يجب أن تكون رقمًا صحيحًا")
+        setting.value = value
+        db.add(AuditLog(user_id=user.id, action="update", entity_type="setting", entity_id=setting.id))
+    db.commit()
+    return sorted(existing.values(), key=lambda s: (s.category, s.key))
+
+
 @router.put("/{key}", response_model=SettingOut)
 def update_setting(key: str, payload: SettingUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_admin(user, db)
