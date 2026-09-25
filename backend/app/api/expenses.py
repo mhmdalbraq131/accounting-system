@@ -79,6 +79,7 @@ def _next_expense_number(db: Session, year: int) -> str:
 
 @router.get("")
 def list_expenses(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_permission(user, "expenses.view", db)
     stmt = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
     if user.branch_id is not None:
         stmt = stmt.where((Expense.branch_id == user.branch_id) | Expense.branch_id.is_(None))
