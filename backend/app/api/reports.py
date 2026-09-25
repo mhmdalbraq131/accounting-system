@@ -445,6 +445,34 @@ def balance_sheet(
         })
         totals[account_type] += amount
 
+    result_stmt = (
+        select(
+            func.coalesce(func.sum(
+                func.case(
+                    (Account.account_type == "revenue", JournalLine.credit - JournalLine.debit),
+                    (Account.account_type.in_(["expense", "cost_of_service"]), JournalLine.debit - JournalLine.credit),
+                    else_=0,
+                )
+            ), 0)
+        )
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, JournalLine.account_id == Account.id)
+        .where(JournalEntry.status == "posted", Account.account_type.in_(["revenue", "expense", "cost_of_service"]))
+    )
+    if user.branch_id is not None:
+        result_stmt = result_stmt.where((JournalEntry.branch_id == user.branch_id) | JournalEntry.branch_id.is_(None))
+    if as_of_date:
+        result_stmt = result_stmt.where(JournalEntry.entry_date <= as_of_date)
+    current_result = Decimal(str(db.scalar(result_stmt) or 0))
+    if current_result:
+        sections["equity"].append({
+            "account_id": None,
+            "code": "CURRENT_RESULT",
+            "name_ar": "صافي نتيجة الفترة الحالية",
+            "amount": current_result,
+        })
+        totals["equity"] += current_result
+
     return {
         "as_of_date": as_of_date,
         "assets": sections["asset"],
@@ -453,6 +481,7 @@ def balance_sheet(
         "total_assets": totals["asset"],
         "total_liabilities": totals["liability"],
         "total_equity": totals["equity"],
+        "current_period_result": current_result,
         "liabilities_plus_equity": totals["liability"] + totals["equity"],
         "balanced": totals["asset"] == totals["liability"] + totals["equity"],
         "printed_by": user.full_name,
