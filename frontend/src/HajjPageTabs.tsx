@@ -37,7 +37,7 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
       await createProgram({ code: programForm.code.trim(), name_ar: programForm.name_ar.trim(), program_type: "hajj", season: programForm.season || undefined, capacity: Number(programForm.capacity || 0), sale_price: Number(programForm.sale_price || 0), supplier_cost: Number(programForm.supplier_cost || 0), supplier_id: programForm.supplier_id ? Number(programForm.supplier_id) : undefined });
       setProgramForm({ code: "", name_ar: "", season: "", capacity: "0", sale_price: "", supplier_cost: "", supplier_id: "" });
       setMessage("تم إنشاء برنامج الحج. أغلق البرنامج القديم إداريًا عند انتهاء موسمه.");
-      window.location.reload();
+      await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "تعذر إنشاء برنامج الحج"); }
   }
 
