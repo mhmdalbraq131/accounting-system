@@ -1,6 +1,6 @@
 import React,{useState} from "react";
 type ModuleId="hajj"|"umrah"|"flight"|"buses"|"extra_visit"|"extra_work_visa"|"accounts"|"vouchers"|"journals"|"expenses"|"ar_ap"|"accounting_controls"|"settings";
-type Node={id:string;label:string;target?:string;children?:Node[]};
+type Node={id:string;label:string;target?:string;module?:ModuleId;children?:Node[]};
 const TREE:Node[]=[
  {id:"hajj",label:"الحج",children:[
   {id:"h0",label:"لوحة الحج",target:"لوحة الحج"},
@@ -29,36 +29,43 @@ const TREE:Node[]=[
   {id:"wv1",label:"تسجيل فيز العمل",target:"تسجيل فيز العمل"},
   {id:"wv2",label:"سجل فيز العمل",target:"سجل فيز العمل"}
  ]},
- {id:"accounts",label:"الدليل المحاسبي",children:[
-  {id:"a1",label:"تهيئة الأستاذ العام",children:[{id:"a11",label:"دليل الحسابات",target:"دليل الحسابات"}]},
-  {id:"a2",label:"المدخلات",children:[
-   {id:"a21",label:"الموردون",target:"الموردون"},
-   {id:"a22",label:"الصناديق والبنوك والمحافظ",target:"الصناديق والبنوك والمحافظ"}
+ {id:"accounts",label:"المحاسبة",children:[
+  {id:"a1",label:"التهيئة المحاسبية",children:[
+   {id:"a11",label:"دليل الحسابات",target:"دليل الحسابات",module:"accounts"},
+   {id:"a12",label:"ربط الحسابات الافتراضية",target:"ربط الحسابات",module:"settings"},
+   {id:"a13",label:"العملات",target:"العملات",module:"settings"},
+   {id:"a14",label:"الأبعاد والفترات وسجل التدقيق",target:"الضبط المحاسبي",module:"accounting_controls"}
   ]},
-  {id:"a3",label:"العمليات",children:[
-   {id:"a31",label:"كشف حساب طرف",target:"كشف حساب طرف"},
-   {id:"a32",label:"سداد مستحقات الموردين",target:"سداد مستحقات الموردين"}
+  {id:"a2",label:"الحسابات المدينة",children:[
+   {id:"a21",label:"فواتير العملاء",target:"الفواتير",module:"ar_ap"},
+   {id:"a22",label:"أعمار الذمم المدينة",target:"أعمار الذمم",module:"ar_ap"},
+   {id:"a23",label:"كشف حساب الطرف",target:"كشف حساب طرف",module:"accounts"}
   ]},
-  {id:"a4",label:"التقارير",children:[
-   {id:"a41",label:"الملخص المالي",target:"الملخص المالي"},
-   {id:"a42",label:"اليومية",target:"اليومية"},
-   {id:"a43",label:"ميزان المراجعة",target:"ميزان المراجعة"},
-   {id:"a44",label:"الأرباح والخسائر",target:"الأرباح والخسائر"},
-   {id:"a45",label:"الأستاذ العام",target:"الأستاذ العام"}
+  {id:"a3",label:"الحسابات الدائنة",children:[
+   {id:"a31",label:"الموردون",target:"الموردون",module:"accounts"},
+   {id:"a32",label:"سداد مستحقات الموردين",target:"سداد مستحقات الموردين",module:"accounts"}
+  ]},
+  {id:"a4",label:"البنوك والصناديق",children:[
+   {id:"a41",label:"الصناديق والبنوك والمحافظ",target:"الصناديق والبنوك والمحافظ",module:"accounts"},
+   {id:"a42",label:"سند قبض",target:"سند قبض",module:"vouchers"},
+   {id:"a43",label:"سند صرف",target:"سند صرف",module:"vouchers"},
+   {id:"a44",label:"تخصيص الدفعات",target:"المدفوعات",module:"ar_ap"}
+  ]},
+  {id:"a5",label:"دفتر الأستاذ والقيود",children:[
+   {id:"a51",label:"قيد يومي جديد",target:"قيد يومي جديد",module:"journals"},
+   {id:"a52",label:"القيود المسجلة",target:"القيود المسجلة",module:"journals"},
+   {id:"a53",label:"اليومية",target:"اليومية",module:"accounts"},
+   {id:"a54",label:"الأستاذ العام",target:"الأستاذ العام",module:"accounts"}
+  ]},
+  {id:"a6",label:"المصروفات",children:[
+   {id:"a61",label:"إدارة المصروفات",target:"إدارة المصروفات",module:"expenses"}
+  ]},
+  {id:"a7",label:"التقارير المالية",children:[
+   {id:"a71",label:"الملخص المالي",target:"الملخص المالي",module:"accounts"},
+   {id:"a72",label:"ميزان المراجعة",target:"ميزان المراجعة",module:"accounts"},
+   {id:"a73",label:"الأرباح والخسائر",target:"الأرباح والخسائر",module:"accounts"}
   ]}
  ]},
- {id:"vouchers",label:"السندات",children:[{id:"v1",label:"سند قبض",target:"سند قبض"},{id:"v2",label:"سند صرف",target:"سند صرف"}]},
- {id:"journals",label:"القيود اليومية",children:[
-  {id:"j1",label:"قيد يومي جديد",target:"قيد يومي جديد"},
-  {id:"j2",label:"القيود المسجلة",target:"القيود المسجلة"}
- ]},
- {id:"expenses",label:"المصروفات",children:[{id:"e1",label:"إدارة المصروفات",target:"إدارة المصروفات"}]},
- {id:"ar_ap",label:"الذمم",children:[
-  {id:"r1",label:"الفواتير",target:"الفواتير"},
-  {id:"r2",label:"تخصيص الدفعات",target:"المدفوعات"},
-  {id:"r3",label:"أعمار الذمم",target:"أعمار الذمم"}
- ]},
- {id:"accounting_controls",label:"الضبط المحاسبي",children:[{id:"c1",label:"الأبعاد والفترات وسجل التدقيق",target:"الضبط المحاسبي"}]},
  {id:"settings",label:"الإعدادات",children:[
   {id:"s1",label:"بيانات الوكالة",target:"الإعدادات العامة"},
   {id:"s2",label:"ربط الحسابات",target:"ربط الحسابات"},
@@ -76,7 +83,7 @@ function TreeNode({node,activeModule,onNavigate,level=0}:{node:Node;activeModule
  const module=node.id===activeModule;
  return <div className="tree-node">
   <button className={`tree-row ${module?"active":""}`} style={{paddingInlineStart:10+level*18}} onClick={()=>{
-   if(node.target){onNavigate(activeModule,node.target);return;}
+   if(node.target){onNavigate(node.module??activeModule,node.target);return;}
    if(ROOTS.has(node.id as ModuleId)){onNavigate(node.id as ModuleId);setOpen(true);return;}
    if(has)setOpen(v=>!v);
   }}><span className="tree-caret">{has?(open?"⌄":"‹"):"•"}</span><span>{node.label}</span></button>
