@@ -76,7 +76,7 @@ function TreeNode({node,activeModule,onNavigate,level=0}:{node:Node;activeModule
  const module=node.id===activeModule;
  return <div className="tree-node">
   <button className={`tree-row ${module?"active":""}`} style={{paddingInlineStart:10+level*18}} onClick={()=>{
-   if(node.target){onNavigate(node.id===activeModule?activeModule:node.id as ModuleId,node.target);return;}
+   if(node.target){onNavigate(activeModule,node.target);return;}
    if(ROOTS.has(node.id as ModuleId)){onNavigate(node.id as ModuleId);setOpen(true);return;}
    if(has)setOpen(v=>!v);
   }}><span className="tree-caret">{has?(open?"⌄":"‹"):"•"}</span><span>{node.label}</span></button>
