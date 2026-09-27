@@ -19,7 +19,7 @@ export default function SettingsPage({onOpenExtraService,onBrandingChange}:{onOp
  async function refresh(){try{const s=await getSettings();setSettings(s);setDraft(Object.fromEntries(s.map(x=>[x.key,x.value])));setError("");}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل إعدادات النظام");}}
  async function loadAccounts(){try{setAccounts(await getAccounts());}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل الحسابات");}}
  async function loadBranches(){try{setBranches(await getBranches());}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل الفروع");}}
- async function loadUsersAndRoles(){try{const[u,r]=await Promise.all([getUsers(),getRoles()]);setUsers(u);setRoles(r);}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل المستخدمين والأدوار");}}
+ async function loadUsersAndRoles(){try{const[u,r,b]=await Promise.all([getUsers(),getRoles(),getBranches()]);setUsers(u);setRoles(r);setBranches(b);}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل المستخدمين والأدوار");}}
  async function refreshCurrencies(){setCurrencies(await getCurrencies());}
  useEffect(()=>{void refresh();},[]);
  useEffect(()=>{if(tab==="accounts")void loadAccounts();if(tab==="branches")void loadBranches();if(tab==="users"||tab==="roles")void loadUsersAndRoles();if(tab==="currencies")void refreshCurrencies().catch(e=>setError(e instanceof Error?e.message:"تعذر تحميل العملات"));},[tab]);
