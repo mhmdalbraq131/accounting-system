@@ -26,6 +26,9 @@ def ensure_schema_compatibility() -> None:
         "travel_programs": {
             "supplier_id": "INTEGER",
         },
+        "vouchers": {
+            "beneficiary_name": "VARCHAR(200)",
+        },
     }
 
     with engine.begin() as connection:
