@@ -29,7 +29,8 @@ def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> Financ
 
 
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date, amount: Decimal,
-                   description: str, beneficiary_name: str | None = None, source_account_id: int | None, destination_account_id: int | None,
+                   description: str, source_account_id: int | None, destination_account_id: int | None,
+                   beneficiary_name: str | None = None,
                    currency_id: int | None = None, exchange_rate: Decimal | None = None,
                    created_by: int | None = None, branch_id: int | None = None,
                    linked_service_type: str | None = None, linked_service_id: int | None = None,
