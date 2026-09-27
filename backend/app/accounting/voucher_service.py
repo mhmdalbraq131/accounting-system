@@ -29,13 +29,16 @@ def _financial_account_for_ledger(db: Session, ledger_account_id: int) -> Financ
 
 
 def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, voucher_date: date, amount: Decimal,
-                   description: str, source_account_id: int | None, destination_account_id: int | None,
+                   description: str, beneficiary_name: str | None = None, source_account_id: int | None, destination_account_id: int | None,
                    currency_id: int | None = None, exchange_rate: Decimal | None = None,
                    created_by: int | None = None, branch_id: int | None = None,
                    linked_service_type: str | None = None, linked_service_id: int | None = None,
                    manual_voucher_number: str | None = None) -> Voucher:
     voucher_number = voucher_number.strip()
     description = description.strip()
+    beneficiary_name = (beneficiary_name or "").strip() or None
+    if voucher_type in {"receipt", "payment"} and not beneficiary_name:
+        raise ValueError("اسم المستفيد مطلوب في سند القبض أو الصرف")
     manual_voucher_number = (manual_voucher_number or "").strip() or None
     if not voucher_number:
         raise ValueError("رقم السند النظامي مطلوب")
@@ -102,6 +105,7 @@ def create_voucher(db: Session, *, voucher_number: str, voucher_type: str, vouch
         voucher_type=voucher_type,
         voucher_date=voucher_date,
         description=description,
+        beneficiary_name=beneficiary_name,
         amount=amount,
         source_account_id=source_account_id,
         destination_account_id=destination_account_id,
