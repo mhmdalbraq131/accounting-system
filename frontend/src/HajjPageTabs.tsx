@@ -83,7 +83,7 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
   return <main className="page">
     <div className="welcome"><div><span className="eyebrow">قسم الحج</span><h2>إدارة الحج</h2><p>كل وظيفة في تبويب مستقل: البرامج، الحجاج، الحصص، الحجوزات، التحصيلات والوكلاء.</p></div></div>
     {(error || message) && <div className={error ? "error-banner" : "notice-banner"}>{error || message}</div>}
-    <div className="quick-grid" style={{ marginBottom: 20 }}>{tabs.map(([id, label]) => <button key={id} className={tab === id ? "quick-btn active" : "quick-btn"} onClick={() => { setTab(id); setError(""); setMessage(""); }}><b>{label}</b><small>فتح</small></button>)}</div>
+    <div className="quick-grid" style={{ marginBottom: 20 }}>{tabs.map(([id, label]) => <button data-nav={label} key={id} className={tab === id ? "quick-btn active" : "quick-btn"} onClick={() => { setTab(id); setError(""); setMessage(""); }}><b>{label}</b><small>فتح</small></button>)}</div>
 
     {tab === "dashboard" && <>
       <div className="stats compact">
