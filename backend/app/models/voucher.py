@@ -15,6 +15,7 @@ class Voucher(Base):
     voucher_type: Mapped[str] = mapped_column(String(20), index=True)  # receipt, payment, transfer
     voucher_date: Mapped[date] = mapped_column(Date)
     description: Mapped[str] = mapped_column(String(500))
+    beneficiary_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
     exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
