@@ -16,8 +16,8 @@ export default function PaymentVoucherPage(){
  const [error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[partyBusy,setPartyBusy]=useState(false);
  async function refresh(){
    try{
-     const [supplier,customer,agent,f,v]=await Promise.all([getParties("supplier"),getParties("customer"),getParties("agent"),getFinancial(),getVouchers()]);
-     setParties([...supplier,...customer,...agent]);setFinancial(f);setVouchers(v);
+     const [supplier,customer,agent,both,f,v]=await Promise.all([getParties("supplier"),getParties("customer"),getParties("agent"),getParties("both"),getFinancial(),getVouchers()]);
+     setParties([...supplier,...customer,...agent,...both]);setFinancial(f);setVouchers(v);
      const data=type==="hajj"?await getHajjBookings():type==="umrah"?await getUmrahBookings():await getServices(type);
      setRows(data);setError("");
    }catch(e){setError(e instanceof Error?e.message:"تعذر تحميل بيانات سندات الصرف")}
