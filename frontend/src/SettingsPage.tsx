@@ -14,7 +14,7 @@ const emptyBranch:BranchForm={code:"",name_ar:"",address:"",phone:"",is_main:fal
 const emptyUser:UserForm={username:"",full_name:"",password:"",branch_id:"",role_id:"",is_active:true};
 const SUGGESTED=[{code:"YER",name_ar:"الريال اليمني",symbol:"ر.ي"},{code:"SAR",name_ar:"الريال السعودي",symbol:"ر.س"},{code:"USD",name_ar:"الدولار الأمريكي",symbol:"$"}];
 
-export default function SettingsPage({onOpenExtraService,onBrandingChange}:{onOpenExtraService?:(kind:ExtraService)=>void;onBrandingChange?:(branding:{name:string;logo:string;phone:string;address:string})=>void}={}){
+export default function SettingsPage({onOpenExtraService,onBrandingChange,target}:{onOpenExtraService?:(kind:ExtraService)=>void;onBrandingChange?:(branding:{name:string;logo:string;phone:string;address:string})=>void;target?:string}={}){
  const [tab,setTab]=useState("general"),[settings,setSettings]=useState<Setting[]>([]),[draft,setDraft]=useState<Record<string,string>>({}),[accounts,setAccounts]=useState<any[]>([]),[branches,setBranches]=useState<any[]>([]),[users,setUsers]=useState<ManagedUser[]>([]),[roles,setRoles]=useState<Role[]>([]),[permissions,setPermissions]=useState<Permission[]>([]),[currencies,setCurrencies]=useState<any[]>([]),[error,setError]=useState(""),[message,setMessage]=useState(""),[saving,setSaving]=useState(false);
  async function refresh(){try{const s=await getSettings();setSettings(s);setDraft(Object.fromEntries(s.map(x=>[x.key,x.value])));setError("");}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل إعدادات النظام");}}
  async function loadAccounts(){try{setAccounts(await getAccounts());}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل الحسابات");}}
@@ -23,6 +23,7 @@ export default function SettingsPage({onOpenExtraService,onBrandingChange}:{onOp
  async function refreshCurrencies(){setCurrencies(await getCurrencies());}
  useEffect(()=>{void refresh();},[]);
  useEffect(()=>{if(tab==="accounts")void loadAccounts();if(tab==="branches")void loadBranches();if(tab==="users"||tab==="roles")void loadUsersAndRoles();if(tab==="currencies")void refreshCurrencies().catch(e=>setError(e instanceof Error?e.message:"تعذر تحميل العملات"));},[tab]);
+useEffect(()=>{const map:Record<string,string>={"الإعدادات العامة":"general","ربط الحسابات":"accounts","الفروع":"branches","المستخدمون":"users","الأدوار والصلاحيات":"roles","العملات":"currencies","الخدمات الإضافية":"extras"};const next=map[target||""];if(next)setTab(next)},[target]);
  const grouped=useMemo(()=>settings.reduce<Record<string,Setting[]>>((acc,s)=>{(acc[s.category]??=[]).push(s);return acc;},{}),[settings]);
  function setDraftValue(key:string,value:string){setDraft(d=>({...d,[key]:value}));setMessage("");setError("");}
  async function saveAllSettings(){
