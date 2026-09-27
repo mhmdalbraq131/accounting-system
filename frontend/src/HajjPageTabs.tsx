@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createHajjBooking, createHajjQuota, createParty, createPilgrim, createProgram, getAccounts, getHajjBookings, getHajjQuotas, getParties, postHajjBooking, type Booking, type HajjQuota, type Pilgrim, type Program } from "./api";
+import { createHajjBooking, createHajjQuota, createParty, createPilgrim, createProgram, getAccounts, getPrograms, getHajjBookings, getHajjQuotas, getParties, postHajjBooking, type Booking, type HajjQuota, type Pilgrim, type Program } from "./api";
 import HajjCollectionPanel from "./HajjCollectionPanel";
 
 const money = (v: string | number) => Number(v || 0).toLocaleString("ar-YE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -8,6 +8,8 @@ const tabs = [["dashboard", "لوحة الحج"], ["programs", "برامج ال�
 export default function HajjPageTabs({ programs, pilgrims, suppliers, customers }: { programs: Program[]; pilgrims: Pilgrim[]; suppliers: any[]; customers: any[] }) {
   const [tab, setTab] = useState<(typeof tabs)[number][0]>("dashboard");
   const [quotas, setQuotas] = useState<HajjQuota[]>([]);
+  const [programRows, setProgramRows] = useState<Program[]>(programs);
+  useEffect(() => { setProgramRows(programs); }, [programs]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -20,7 +22,7 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
   const [agentForm, setAgentForm] = useState({ name: "", code: "", phone: "", account_id: "" });
   const [bookingForm, setBookingForm] = useState({ program_id: "", pilgrim_id: "", quota_id: "", agent_id: "", customer_id: "", party_mode: "agent", sale_price: "", supplier_cost: "" });
 
-  const hajjPrograms = useMemo(() => programs.filter(p => p.program_type === "hajj" && p.is_active), [programs]);
+  const hajjPrograms = useMemo(() => programRows.filter(p => p.program_type === "hajj" && p.is_active), [programRows]);
   const selectedQuota = quotas.find(q => q.id === Number(bookingForm.quota_id));
 
   async function refresh() {
@@ -37,6 +39,7 @@ export default function HajjPageTabs({ programs, pilgrims, suppliers, customers 
       await createProgram({ code: programForm.code.trim(), name_ar: programForm.name_ar.trim(), program_type: "hajj", season: programForm.season || undefined, capacity: Number(programForm.capacity || 0), sale_price: Number(programForm.sale_price || 0), supplier_cost: Number(programForm.supplier_cost || 0), supplier_id: programForm.supplier_id ? Number(programForm.supplier_id) : undefined });
       setProgramForm({ code: "", name_ar: "", season: "", capacity: "0", sale_price: "", supplier_cost: "", supplier_id: "" });
       setMessage("تم إنشاء برنامج الحج. أغلق البرنامج القديم إداريًا عند انتهاء موسمه.");
+      setProgramRows(await getPrograms());
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "تعذر إنشاء برنامج الحج"); }
   }
