@@ -55,41 +55,46 @@ def _next_party_account_code(db: Session, prefix: str) -> str:
     rows = db.scalars(select(Account.code).where(Account.code.like(f"{prefix}%"))).all()
     used = set()
     for code in rows:
-        raw = str(code)
         try:
-            used.add(int(raw))
+            used.add(int(str(code)))
         except (TypeError, ValueError):
             continue
-    number = max(1, max((n for n in used if n >= int(prefix + "00") and n < int(prefix + "99")), default=int(prefix + "00")) + 1)
+    lower = int(prefix + "00")
+    upper = int(prefix + "99")
+    number = max(lower + 1, max((n for n in used if lower <= n <= upper), default=lower) + 1)
     while number in used:
         number += 1
+        if number > upper:
+            raise HTTPException(409, "نفدت رموز الحسابات المتاحة للطرف")
     return str(number)
 
 
 def _ensure_party_account(db: Session, *, name: str, party_type: str, branch_id: int | None) -> int | None:
-    # العملاء والوكلاء يمثلون ذمم مدينة، لذلك تُنشأ حساباتهم تحت الأصول.
-    if party_type not in {"customer", "agent"}:
+    # العملاء والوكلاء ذمم مدينة تحت الأصول، والموردون ذمم دائنة تحت الخصوم.
+    config = {
+        "customer": ("1200", "الأصول", "العملاء والوكلاء", "asset", "عميل"),
+        "agent": ("1200", "الأصول", "العملاء والوكلاء", "asset", "وكيل"),
+        "supplier": ("2100", "الخصوم", "الموردون والدائنون", "liability", "مورد"),
+    }
+    if party_type not in config:
         return None
-    parent_code = "1200"
+    parent_code, _, parent_name, parent_type, label = config[party_type]
     parent = db.scalar(select(Account).where(Account.code == parent_code))
     if parent is None:
-        parent = Account(code=parent_code, name_ar="العملاء والوكلاء", account_type="asset", parent_id=None, branch_id=None, opening_balance=Decimal("0"))
-        db.add(parent)
-        db.flush()
-    elif parent.account_type != "asset":
-        raise HTTPException(409, "الحساب 1200 محجوز لنوع حساب غير الأصول")
-    code = _next_party_account_code(db, "12")
-    label = "عميل" if party_type == "customer" else "وكيل"
-    account = Account(
-        code=code,
-        name_ar=f"{label} - {name.strip()}",
-        account_type="asset",
-        parent_id=parent.id,
-        branch_id=branch_id,
-        opening_balance=Decimal("0"),
-    )
-    db.add(account)
-    db.flush()
+        root_code = parent_code[0] + "000"
+        root_name = "الأصول" if parent_type == "asset" else "الخصوم"
+        root = db.scalar(select(Account).where(Account.code == root_code))
+        if root is None:
+            root = Account(code=root_code,name_ar=root_name,account_type=parent_type,parent_id=None,branch_id=None,opening_balance=Decimal("0"))
+            db.add(root);db.flush()
+        parent = Account(code=parent_code,name_ar=parent_name,account_type=parent_type,parent_id=root.id,branch_id=None,opening_balance=Decimal("0"))
+        db.add(parent);db.flush()
+    elif parent.account_type != parent_type:
+        raise HTTPException(409, f"الحساب {parent_code} محجوز لنوع حساب غير صحيح")
+    prefix = "12" if parent_type == "asset" else "21"
+    code = _next_party_account_code(db,prefix)
+    account = Account(code=code,name_ar=f"{label} - {name.strip()}",account_type=parent_type,parent_id=parent.id,branch_id=branch_id,opening_balance=Decimal("0"))
+    db.add(account);db.flush()
     return account.id
 
 
