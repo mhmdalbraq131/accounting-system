@@ -27,6 +27,7 @@ class VoucherCreate(BaseModel):
     voucher_date: date
     amount: Decimal
     description: str
+    beneficiary_name: str | None = None
     source_account_id: int
     destination_account_id: int
     currency_id: int | None = None
@@ -108,6 +109,7 @@ def create(payload: VoucherCreate, db: Session = Depends(get_db), user: User = D
             voucher_date=payload.voucher_date,
             amount=payload.amount,
             description=payload.description,
+            beneficiary_name=payload.beneficiary_name,
             source_account_id=payload.source_account_id,
             destination_account_id=payload.destination_account_id,
             currency_id=currency_id,
