@@ -18,7 +18,8 @@ export default function SettingsPage({onOpenExtraService,onBrandingChange}:{onOp
  const [tab,setTab]=useState("general"),[settings,setSettings]=useState<Setting[]>([]),[draft,setDraft]=useState<Record<string,string>>({}),[accounts,setAccounts]=useState<any[]>([]),[branches,setBranches]=useState<any[]>([]),[users,setUsers]=useState<ManagedUser[]>([]),[roles,setRoles]=useState<Role[]>([]),[permissions,setPermissions]=useState<Permission[]>([]),[currencies,setCurrencies]=useState<any[]>([]),[error,setError]=useState(""),[message,setMessage]=useState(""),[saving,setSaving]=useState(false);
  async function refresh(){try{const[s,a,b,u,r]=await Promise.all([getSettings(),getAccounts(),getBranches(),getUsers(),getRoles()]);setSettings(s);setDraft(Object.fromEntries(s.map(x=>[x.key,x.value])));setAccounts(a);setBranches(b);setUsers(u);setRoles(r);setError("");}catch(e){setError(e instanceof Error?e.message:"تعذر تحميل إعدادات النظام");}}
  async function refreshCurrencies(){setCurrencies(await getCurrencies());}
- useEffect(()=>{void refresh();void refreshCurrencies().catch(()=>undefined);},[]);
+ useEffect(()=>{void refresh();},[]);
+ useEffect(()=>{if(tab==="currencies")void refreshCurrencies().catch(e=>setError(e instanceof Error?e.message:"تعذر تحميل العملات"));},[tab]);
  const grouped=useMemo(()=>settings.reduce<Record<string,Setting[]>>((acc,s)=>{(acc[s.category]??=[]).push(s);return acc;},{}),[settings]);
  function setDraftValue(key:string,value:string){setDraft(d=>({...d,[key]:value}));setMessage("");setError("");}
  async function saveAllSettings(){
