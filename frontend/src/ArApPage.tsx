@@ -2,13 +2,14 @@ import React,{useEffect,useState} from "react";
 import {createInvoice,createPayment,getAccounts,getAging,getInvoices,getParties,getPayments,postInvoice,postPayment,cancelInvoice,cancelPayment,allocatePayment,type Invoice,type Payment} from "./api";
 
 const money=(v:any)=>Number(v||0).toLocaleString("ar-YE",{minimumFractionDigits:2,maximumFractionDigits:2});
-export default function ArApPage(){
+export default function ArApPage({target}:{target?:string}){
  const [invoices,setInvoices]=useState<Invoice[]>([]),[payments,setPayments]=useState<Payment[]>([]),[parties,setParties]=useState<any[]>([]),[accounts,setAccounts]=useState<any[]>([]),[aging,setAging]=useState<any>(null),[tab,setTab]=useState<"invoices"|"payments">("invoices"),[busy,setBusy]=useState(false),[msg,setMsg]=useState("");
  const [alloc,setAlloc]=useState<any>({payment_id:"",invoice_id:"",amount:""});
  const [inv,setInv]=useState<any>({invoice_number:"",invoice_type:"sales",party_id:"",invoice_date:new Date().toISOString().slice(0,10),due_date:"",description:"",total_amount:"",receivable_account_id:"",revenue_account_id:""});
  const [pay,setPay]=useState<any>({payment_number:"",payment_type:"receipt",party_id:"",payment_date:new Date().toISOString().slice(0,10),amount:"",source_account_id:"",target_account_id:"",description:""});
  async function load(){try{const [i,p,ps,as,ag]=await Promise.all([getInvoices({}),getPayments({}),getParties(),getAccounts(),getAging("sales")]);setInvoices(i);setPayments(p);setParties(ps);setAccounts(as);setAging(ag)}catch(e){setMsg(e instanceof Error?e.message:"تعذر تحميل البيانات")}}
  useEffect(()=>{load()},[]);
+ useEffect(()=>{if(target==="المدفوعات"||target==="أعمار الذمم")setTab("payments");else if(target==="الفواتير")setTab("invoices")},[target]);
  const setI=(k:string,v:any)=>setInv((x:any)=>({...x,[k]:v}),),setP=(k:string,v:any)=>setPay((x:any)=>({...x,[k]:v}));
  async function act(fn:()=>Promise<any>){setBusy(true);setMsg("");try{await fn();await load();setMsg("تم تنفيذ العملية بنجاح")}catch(e){setMsg(e instanceof Error?e.message:"تعذر تنفيذ العملية")}finally{setBusy(false)}}
  const customers=parties.filter(p=>["customer","agent"].includes(p.party_type)),suppliers=parties.filter(p=>["supplier","agent"].includes(p.party_type));
