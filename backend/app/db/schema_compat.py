@@ -22,6 +22,7 @@ def ensure_schema_compatibility() -> None:
     required_columns = {
         "program_bookings": {
             "supplier_paid_amount": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+            "journal_entry_id": "INTEGER",
         },
         "travel_programs": {
             "supplier_id": "INTEGER",
