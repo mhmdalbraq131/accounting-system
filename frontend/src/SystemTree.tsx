@@ -1,4 +1,4 @@
-import React,{useState} from "react";
+import React,{useEffect,useState} from "react";
 type ModuleId="hajj"|"umrah"|"flight"|"buses"|"extra_visit"|"extra_work_visa"|"accounts"|"vouchers"|"journals"|"expenses"|"ar_ap"|"accounting_controls"|"settings";
 type Node={id:string;label:string;target?:string;module?:ModuleId;children?:Node[]};
 const TREE:Node[]=[
@@ -76,7 +76,6 @@ const TREE:Node[]=[
   {id:"s7",label:"الخدمات الإضافية",target:"الخدمات الإضافية"}
  ]}
 ];
-const ROOTS=new Set<ModuleId>(["hajj","umrah","flight","buses","extra_visit","extra_work_visa","accounts","vouchers","journals","expenses","ar_ap","accounting_controls","settings"]);
 function TreeNode({node,activeModule,onNavigate,level=0}:{node:Node;activeModule:ModuleId;onNavigate:(m:ModuleId,t?:string)=>void;level?:number}){
  const has=!!node.children?.length;
  const [open,setOpen]=useState(level===0&&node.id===activeModule);
