@@ -24,6 +24,7 @@ export default function SettingsPage({onOpenExtraService,onBrandingChange,target
  useEffect(()=>{void refresh();},[]);
  useEffect(()=>{if(tab==="accounts")void loadAccounts();if(tab==="branches")void loadBranches();if(tab==="users"||tab==="roles")void loadUsersAndRoles();if(tab==="currencies")void refreshCurrencies().catch(e=>setError(e instanceof Error?e.message:"تعذر تحميل العملات"));},[tab]);
 useEffect(()=>{const map:Record<string,string>={"الإعدادات العامة":"general","ربط الحسابات":"accounts","الفروع":"branches","المستخدمون":"users","الأدوار والصلاحيات":"roles","العملات":"currencies","الخدمات الإضافية":"extras"};const next=map[target||""];if(next)setTab(next)},[target]);
+useEffect(()=>{if(!Object.keys(draft).length)return;const root=document.documentElement;root.dataset.theme=draft.theme==="dark"?"dark":"light";root.style.setProperty("--app-font-family",draft.font_family||"Segoe UI");root.style.setProperty("--app-font-size",(Number(draft.font_size)||14)+"px");root.style.setProperty("--app-font-scale",String((Number(draft.font_size)||14)/14));root.dir=draft.rtl==="false"?"ltr":"rtl";root.lang=draft.language==="en"?"en":"ar";},[draft.theme,draft.font_family,draft.font_size,draft.rtl,draft.language]);
  const grouped=useMemo(()=>settings.reduce<Record<string,Setting[]>>((acc,s)=>{(acc[s.category]??=[]).push(s);return acc;},{}),[settings]);
  function setDraftValue(key:string,value:string){setDraft(d=>({...d,[key]:value}));setMessage("");setError("");}
  async function saveAllSettings(){
@@ -35,11 +36,6 @@ useEffect(()=>{const map:Record<string,string>={"الإعدادات العامة
      setSettings(updated);setDraft(Object.fromEntries(updated.map(x=>[x.key,x.value])));
      const m=Object.fromEntries(updated.map(x=>[x.key,x.value]));
      const nextBranding={name:m.company_name||"نظام إدارة الحج والعمرة والسفر",logo:m.company_logo_url||"",phone:m.company_phone||"",address:m.company_address||""}; onBrandingChange?.(nextBranding); localStorage.setItem("accounting_branding",JSON.stringify(nextBranding));
-     document.documentElement.dataset.theme=m.theme==="dark"?"dark":"light";
-     document.documentElement.style.setProperty("--app-font-family",m.font_family||"Segoe UI");
-     document.documentElement.style.setProperty("--app-font-size",(Number(m.font_size)||14)+"px");
-     document.documentElement.dir=m.rtl==="false"?"ltr":"rtl";
-     document.documentElement.lang=m.language==="en"?"en":"ar";
      setMessage("تم حفظ جميع التغييرات بنجاح");
    }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ الإعدادات");}
    finally{setSaving(false);}
@@ -69,7 +65,7 @@ function SimpleTable({rows,columns,labels,actions,format}:{rows:any[];columns:st
 function InterfacePreferences({settings,draft,onChange}:{settings:Setting[];draft:Record<string,string>;onChange:(key:string,value:string)=>void}){
  const get=(key:string, fallback:string)=>draft[key]??settings.find(s=>s.key===key)?.value??fallback;
  return <section className="panel settings-panel">
-   <div className="panel-head"><div><h3>تخصيص الواجهة</h3><p>تحكم في المظهر والخط وحجم النص ولغة واتجاه الواجهة. اضغط «حفظ التغييرات» لتطبيق الإعدادات على النظام.</p></div></div>
+   <div className="panel-head"><div><h3>تخصيص الواجهة</h3><p>تظهر تغييرات المظهر والخط والحجم والاتجاه فورًا على الشاشة. اضغط «حفظ التغييرات» لتثبيتها في النظام.</p></div></div>
    <div className="settings-grid" style={{marginTop:18}}>
      <label><span>المظهر</span><select value={get("theme","light")} onChange={e=>onChange("theme",e.target.value)}><option value="light">فاتح</option><option value="dark">داكن</option></select></label>
      <label><span>لغة الواجهة</span><select value={get("language","ar")} onChange={e=>onChange("language",e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select></label>
