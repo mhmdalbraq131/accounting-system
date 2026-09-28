@@ -47,6 +47,10 @@ DEFAULT_SETTINGS = [
     ("work_visa_cost_account_id", "", "integer", "service_accounting", "حساب تكلفة فيز العمل"),
     ("default_program_type", "umrah", "string", "travel", "نوع البرنامج الافتراضي"),
     ("rtl", "true", "boolean", "interface", "اتجاه الواجهة من اليمين إلى اليسار"),
+    ("language", "ar", "string", "interface", "لغة الواجهة"),
+    ("theme", "light", "string", "interface", "مظهر الواجهة"),
+    ("font_family", "Segoe UI", "string", "interface", "خط الواجهة"),
+    ("font_size", "14", "integer", "interface", "حجم خط الواجهة"),
     ("date_format", "YYYY-MM-DD", "string", "interface", "تنسيق التاريخ"),
 ]
 
