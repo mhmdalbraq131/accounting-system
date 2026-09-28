@@ -35,6 +35,11 @@ useEffect(()=>{const map:Record<string,string>={"الإعدادات العامة
      setSettings(updated);setDraft(Object.fromEntries(updated.map(x=>[x.key,x.value])));
      const m=Object.fromEntries(updated.map(x=>[x.key,x.value]));
      const nextBranding={name:m.company_name||"نظام إدارة الحج والعمرة والسفر",logo:m.company_logo_url||"",phone:m.company_phone||"",address:m.company_address||""}; onBrandingChange?.(nextBranding); localStorage.setItem("accounting_branding",JSON.stringify(nextBranding));
+     document.documentElement.dataset.theme=m.theme==="dark"?"dark":"light";
+     document.documentElement.style.setProperty("--app-font-family",m.font_family||"Segoe UI");
+     document.documentElement.style.setProperty("--app-font-size",(Number(m.font_size)||14)+"px");
+     document.documentElement.dir=m.rtl==="false"?"ltr":"rtl";
+     document.documentElement.lang=m.language==="en"?"en":"ar";
      setMessage("تم حفظ جميع التغييرات بنجاح");
    }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ الإعدادات");}
    finally{setSaving(false);}
