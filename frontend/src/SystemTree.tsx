@@ -78,16 +78,26 @@ const TREE:Node[]=[
 ];
 const ROOTS=new Set<ModuleId>(["hajj","umrah","flight","buses","extra_visit","extra_work_visa","accounts","vouchers","journals","expenses","ar_ap","accounting_controls","settings"]);
 function TreeNode({node,activeModule,onNavigate,level=0}:{node:Node;activeModule:ModuleId;onNavigate:(m:ModuleId,t?:string)=>void;level?:number}){
- const [open,setOpen]=useState(level===0&&node.id===activeModule);
  const has=!!node.children?.length;
- const module=node.id===activeModule;
+ const [open,setOpen]=useState(level===0&&node.id===activeModule);
+ const [selected,setSelected]=useState(false);
+ useEffect(()=>{if(level===0&&node.id===activeModule)setOpen(true)},[activeModule,level,node.id]);
+ const targetModule=node.module??activeModule;
+ const navigate=()=>{if(node.target)onNavigate(targetModule,node.target)};
+ const toggle=()=>{if(has)setOpen(v=>!v)};
+ const onKeyDown=(e:React.KeyboardEvent<HTMLDivElement>)=>{
+   if(e.key==="Enter"){e.preventDefault();if(node.target)navigate();else if(has)toggle();}
+   else if(e.key==="ArrowRight"){if(has){e.preventDefault();setOpen(true)}}
+   else if(e.key==="ArrowLeft"){if(has){e.preventDefault();setOpen(false)}}
+ };
  return <div className="tree-node">
-  <button className={`tree-row ${module?"active":""}`} style={{paddingInlineStart:10+level*18}} onClick={()=>{
-   if(node.target){onNavigate(node.module??activeModule,node.target);return;}
-   if(ROOTS.has(node.id as ModuleId)){onNavigate(node.id as ModuleId);setOpen(true);return;}
-   if(has)setOpen(v=>!v);
-  }}><span className="tree-caret">{has?(open?"⌄":"‹"):"•"}</span><span>{node.label}</span></button>
-  {open&&node.children?.map(c=><TreeNode key={c.id} node={c} activeModule={activeModule} onNavigate={onNavigate} level={level+1}/>)}
+   <div className="tree-row-wrap" style={{paddingInlineStart:10+level*18}}>
+     {has?<button type="button" className="tree-caret-btn" aria-label={(open?"طي ":"فتح ")+node.label} aria-expanded={open} onClick={toggle}>{open?"⌄":"‹"}</button>:<span className="tree-caret-spacer">•</span>}
+     <div role="treeitem" tabIndex={0} aria-selected={selected} className={"tree-row "+(node.id===activeModule?"active ":"")+(selected?"selected":"")} onClick={()=>setSelected(true)} onDoubleClick={navigate} onKeyDown={onKeyDown}>
+       <span>{node.label}</span>
+     </div>
+   </div>
+   {open&&node.children?.map(c=><TreeNode key={c.id} node={c} activeModule={activeModule} onNavigate={onNavigate} level={level+1}/>)}
  </div>
 }
 export default function SystemTree({activeModule,onNavigate}:{activeModule:ModuleId;onNavigate:(m:ModuleId,t?:string)=>void}){
