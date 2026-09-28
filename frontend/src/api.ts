@@ -1,4 +1,5 @@
-const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000/api/v1`).replace(/\/$/, "");
+const API_HOST = window.location.hostname === "localhost" ? "127.0.0.1" : window.location.hostname;
+const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.protocol}//${API_HOST}:8000/api/v1`).replace(/\/$/, "");
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = sessionStorage.getItem("accounting_token") || localStorage.getItem("accounting_token");
